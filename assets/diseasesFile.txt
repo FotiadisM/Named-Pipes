@@ -1,0 +1,10 @@
+Asthma
+Autism
+Cancer
+Ebola
+HIV/AIDS
+Diabetes
+Flu
+Salmonella
+COPD
+COVID-19

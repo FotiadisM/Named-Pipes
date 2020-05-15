@@ -5,10 +5,11 @@
 #include <string.h>
 
 #include "../include/diseaseAggregator.h"
+#include "../include/worker.h"
 
 int main(int argc, char *argv[])
 {
-    pid_t pid = 0;
+    pid_t pid = 0, *pid_array = NULL;
     size_t bufferSize = 0;
     char *input_dir = NULL;
     int numWorkers = 0, opt = 0;
@@ -48,6 +49,12 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    if ((pid_array = malloc(numWorkers * sizeof(pid_t))) == NULL)
+    {
+        perror("malloc");
+        return -1;
+    }
+
     for (int i = 0; i < numWorkers; i++)
     {
         pid = fork();
@@ -65,20 +72,23 @@ int main(int argc, char *argv[])
                 printf("worker failed\n");
             }
             free(input_dir);
+            free(pid_array);
             exit(0);
         }
 
         else
         {
+            pid_array[i] = pid;
             Pipe_Init(pid);
         }
     }
 
-    if (DA_Run(input_dir, bufferSize) == -1)
+    if (DA_Run(pid_array, numWorkers, input_dir, bufferSize) == -1)
     {
         printf("Program failed, exiting");
     }
 
+    free(pid_array);
     free(input_dir);
 
     return 0;

@@ -8,5 +8,8 @@ build/*.o
 logs/*
 !logs/.gitkeep
 
+data/*
+!data/.gitkeep
+
 pipes/*
 !pipes/.gitkeep

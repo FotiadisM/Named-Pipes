@@ -7,8 +7,8 @@
 
 int Pipe_Init(int pid);
 
-int Worker_Run(char *input_dir, size_t bufferSize);
+int *Pipes_Open(const int *pids, const int numWorkers, const char *path, const int flags);
 
-int DA_Run(char *input_dir, size_t bufferSize);
+int DA_Run(const int *pids, const int numWorkers, const char *input_dir, const size_t bufferSize);
 
 #endif
