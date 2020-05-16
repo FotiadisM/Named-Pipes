@@ -3,12 +3,18 @@
 
 #include <stdio.h>
 
-// int DA_Init(const int numWorkers, size_t bufferSize, const char *input_dir);
+typedef struct worker_info
+{
+    pid_t pid;
+    int r_fd;
+    int w_fd;
+    char **countries;
+} worker_info;
 
-int Pipe_Init(int pid);
+typedef worker_info *worker_infoPtr;
 
-int *Pipes_Open(const int *pids, const int numWorkers, const char *path, const int flags);
+int DA_Run(worker_infoPtr workkers_array, const int numWorkers, const size_t bufferSize, const char *input_dir);
 
-int DA_Run(const int *pids, const int numWorkers, const char *input_dir, const size_t bufferSize);
+int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir);
 
 #endif

@@ -1,18 +1,19 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <string.h>
 
 #include "../include/diseaseAggregator.h"
 #include "../include/worker.h"
+#include "../include/pipes.h"
 
 int main(int argc, char *argv[])
 {
-    pid_t pid = 0, *pid_array = NULL;
+    pid_t pid = 0;
     size_t bufferSize = 0;
-    char *input_dir = NULL;
+    worker_infoPtr workers_array = NULL;
     int numWorkers = 0, opt = 0;
+    char *input_dir = NULL;
 
     while ((opt = getopt(argc, argv, "w:b:i:")) != -1)
     {
@@ -49,7 +50,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    if ((pid_array = malloc(numWorkers * sizeof(pid_t))) == NULL)
+    if ((workers_array = malloc(numWorkers * sizeof(worker_info))) == NULL)
     {
         perror("malloc");
         return -1;
@@ -67,28 +68,39 @@ int main(int argc, char *argv[])
 
         else if (pid == 0)
         {
-            if (Worker_Run(input_dir, bufferSize) == -1)
+            if (Worker_Run(bufferSize, input_dir) == -1)
             {
                 printf("worker failed\n");
             }
+
+            free(workers_array);
             free(input_dir);
-            free(pid_array);
+
             exit(0);
         }
 
         else
         {
-            pid_array[i] = pid;
-            Pipe_Init(pid);
+            workers_array[i].pid = pid;
+
+            if ((workers_array[i].r_fd = Pipe_Init("./pipes/r_", pid, O_RDONLY | O_NONBLOCK)) == -1)
+            {
+                printf("Pipe_Init() failed, exiting");
+            }
+
+            if ((workers_array[i].w_fd = Pipe_Init("./pipes/w_", pid, O_WRONLY)) == -1)
+            {
+                printf("Pipe_Init() failed, exiting");
+            }
         }
     }
 
-    if (DA_Run(pid_array, numWorkers, input_dir, bufferSize) == -1)
+    if (DA_Run(workers_array, numWorkers, bufferSize, input_dir) == -1)
     {
-        printf("Program failed, exiting");
+        printf("DA_Run() failed, exiting");
     }
 
-    free(pid_array);
+    free(workers_array);
     free(input_dir);
 
     return 0;

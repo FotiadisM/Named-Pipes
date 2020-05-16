@@ -4,116 +4,68 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
 
 #include "../include/diseaseAggregator.h"
 
-int Pipe_Init(int pid)
-{
-    char str[12] = {'\0'};
-    char path[22] = "./pipes/r_";
-
-    if (sprintf(str, "%d", pid) == -1)
-    {
-        perror("sprintf");
-        return -1;
-    }
-    strcat(path, str);
-
-    if (mkfifo(path, 0640) == -1)
-    {
-        perror("mkfifo");
-        return -1;
-    }
-
-    path[8] = 'w';
-    if (mkfifo(path, 0640) == -1)
-    {
-        perror("mkfifo");
-        return -1;
-    }
-
-    return 0;
-}
-
-int *Pipes_Open(const int *pid_array, const int numWorkers, const char *path, const int flags)
-{
-    int fd = 0, *fd_array = NULL;
-
-    if ((fd_array = malloc(numWorkers * sizeof(int))) == NULL)
-    {
-        perror("malloc");
-        return NULL;
-    }
-
-    for (int i = 0; i < numWorkers; i++)
-    {
-        char pid_str[12] = {'\0'};
-        char f_path[22] = {'\0'};
-
-        if (sprintf(pid_str, "%d", pid_array[i]) == -1)
-        {
-            perror("sprintf");
-            return NULL;
-        }
-
-        strcpy(f_path, path);
-
-        strcat(f_path, pid_str);
-
-        if ((fd = open(f_path, flags)) == -1)
-        {
-            perror("open");
-            return NULL;
-        }
-        fd_array[i] = fd;
-    }
-
-    return fd_array;
-}
-
-int DA_Run(const int *pid_array, const int numWorkers, const char *input_dir, const size_t bufferSize)
+int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
 {
     char *buffer = NULL;
-    int *r_fds = NULL, *w_fds = NULL;
 
     if ((buffer = malloc(bufferSize)) == NULL)
     {
         perror("malloc");
-    }
-
-    if ((w_fds = Pipes_Open(pid_array, numWorkers, "./pipes/r_", O_WRONLY)) == NULL)
-    {
-        printf("Pipes_Open failed");
         return -1;
     }
 
-    if ((r_fds = Pipes_Open(pid_array, numWorkers, "./pipes/w_", O_RDONLY)) == NULL)
+    if (DA_DevideWork(workers_array, numWorkers, bufferSize, input_dir) == -1)
     {
-        printf("Pipes_Open failed");
+        printf("DA_DevideWork() failed\n");
         return -1;
     }
 
-    for (int i = 0; i < numWorkers; i++)
-    {
-        write(w_fds[i], "hello", bufferSize);
-    }
-
-    for (int i = 0; i < numWorkers; i++)
-    {
-        if (close(r_fds[i]) == -1)
-        {
-            perror("close");
-        }
-
-        if (close(w_fds[i]) == -1)
-        {
-            perror("close");
-        }
-    }
-
-    free(r_fds);
-    free(w_fds);
     free(buffer);
+
+    return 0;
+}
+
+int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
+{
+    int count = 0, flag = 1;
+    DIR *dirp = NULL;
+    struct dirent *dir_info = NULL;
+
+    if ((dirp = opendir(input_dir)) == NULL)
+    {
+        perror("opendir()");
+        return -1;
+    }
+
+    while ((dir_info = readdir(dirp)) != NULL)
+    {
+        if (!(strcmp(dir_info->d_name, ".") == 0 || strcmp(dir_info->d_name, "..") == 0))
+        {
+            write(workers_array[count].w_fd, dir_info->d_name, bufferSize);
+
+            if (++count == numWorkers)
+            {
+                flag = 0;
+                count = 0;
+            }
+        }
+    }
+
+    for (int i = 0; i < numWorkers; i++)
+    {
+        if (flag && i >= count)
+        {
+            write(workers_array[count].w_fd, "/exit", bufferSize);
+        }
+        else
+        {
+            write(workers_array[count].w_fd, "OK", bufferSize);
+        }
+    }
 
     return 0;
 }

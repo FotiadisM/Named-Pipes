@@ -3,6 +3,6 @@
 
 #include <stdio.h>
 
-int Worker_Run(char *input_dir, size_t bufferSize);
+int Worker_Run(const size_t bufferSize, const char *input_dir);
 
 #endif

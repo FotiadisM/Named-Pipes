@@ -2,46 +2,44 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
 #include "../include/worker.h"
+#include "../include/pipes.h"
 
-int Worker_Run(char *input_dir, size_t bufferSize)
+int Worker_Run(const size_t bufferSize, const char *input_dir)
 {
-    int rfd = 0, wfd = 0;
-    char buffer[bufferSize];
-    char str[12] = {'\0'};
-    char path[22] = "./pipes/r_";
+    int r_fd = 0, w_fd = 0;
+    char *buffer = NULL;
 
-    if (sprintf(str, "%d", getpid()) == -1)
+    if ((buffer = malloc(bufferSize)) == NULL)
     {
-        perror("printf");
-    }
-    strcat(path, str);
-
-    if ((rfd = open(path, O_RDONLY)) == -1)
-    {
-        perror("open");
+        perror("malloc");
         return -1;
     }
 
-    path[8] = 'w';
-    if ((wfd = open(path, O_WRONLY)) == -1)
+    if ((w_fd = Pipe_Init("./pipes/r_", getpid(), O_WRONLY)) == -1)
     {
-        perror("open");
+        printf("Pipe_Init() failed\n");
         return -1;
     }
 
-    printf("pipe oppened\n");
+    if ((r_fd = Pipe_Init("./pipes/w_", getpid(), O_RDONLY)) == -1)
+    {
+        printf("Pipe_Init() failed");
+        return -1;
+    }
 
-    read(rfd, buffer, bufferSize);
+    read(r_fd, buffer, bufferSize);
     printf("%s\n", buffer);
 
-    if (close(rfd) == -1 || close(wfd) == -1)
+    if (close(r_fd) == -1 || close(w_fd) == -1)
     {
         perror("close");
     }
+
+    free(buffer);
 
     return 0;
 }
