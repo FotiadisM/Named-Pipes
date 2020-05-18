@@ -43,9 +43,31 @@ int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size
 
     while ((dir_info = readdir(dirp)) != NULL)
     {
+        char buffer[24] = {'\0'};
+
         if (!(strcmp(dir_info->d_name, ".") == 0 || strcmp(dir_info->d_name, "..") == 0))
         {
-            write(workers_array[count].w_fd, dir_info->d_name, bufferSize);
+            string_nodePtr node = NULL;
+
+            write(workers_array[count].w_fd, dir_info->d_name, strlen(dir_info->d_name) + 1);
+
+            if ((node = malloc(sizeof(string_node))) == NULL)
+            {
+                perror("malloc");
+                return -1;
+            }
+
+            if ((node->str = malloc(strlen(dir_info->d_name) + 1)) == NULL)
+            {
+                perror("malloc");
+                return -1;
+            }
+
+            strcpy(node->str, dir_info->d_name);
+            node->next = workers_array[count].countries_list;
+            workers_array[count].countries_list = node;
+
+            read(workers_array[count].r_fd, buffer, bufferSize);
 
             if (++count == numWorkers)
             {
@@ -57,14 +79,19 @@ int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size
 
     for (int i = 0; i < numWorkers; i++)
     {
-        if (flag && i >= count)
-        {
-            write(workers_array[count].w_fd, "/exit", bufferSize);
-        }
-        else
-        {
-            write(workers_array[count].w_fd, "OK", bufferSize);
-        }
+        // if (flag && i >= count)
+        // {
+        //     write(workers_array[count].w_fd, "/exit", bufferSize);
+        // }
+        // else
+        // {
+        write(workers_array[i].w_fd, "OK", bufferSize);
+        // }
+    }
+
+    if (closedir(dirp) == -1)
+    {
+        perror("closedirp");
     }
 
     return 0;

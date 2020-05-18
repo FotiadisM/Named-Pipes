@@ -31,8 +31,32 @@ int Worker_Run(const size_t bufferSize, const char *input_dir)
         return -1;
     }
 
-    read(r_fd, buffer, bufferSize);
-    printf("%s\n", buffer);
+    while (1)
+    {
+        read(r_fd, buffer, bufferSize);
+
+        if (strcmp(buffer, "OK") == 0)
+        {
+            break;
+        }
+
+        else if (strcmp(buffer, "/exit") == 0)
+        {
+            if (close(r_fd) == -1 || close(w_fd) == -1)
+            {
+                perror("close");
+            }
+
+            free(buffer);
+
+            return 0;
+        }
+
+        else
+        {
+            write(w_fd, "OK", strlen("OK") + 1);
+        }
+    }
 
     if (close(r_fd) == -1 || close(w_fd) == -1)
     {

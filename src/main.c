@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <wait.h>
 #include <string.h>
 
 #include "../include/diseaseAggregator.h"
@@ -58,6 +59,11 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < numWorkers; i++)
     {
+        workers_array[i].countries_list = NULL;
+    }
+
+    for (int i = 0; i < numWorkers; i++)
+    {
         pid = fork();
 
         if (pid == -1)
@@ -83,7 +89,7 @@ int main(int argc, char *argv[])
         {
             workers_array[i].pid = pid;
 
-            if ((workers_array[i].r_fd = Pipe_Init("./pipes/r_", pid, O_RDONLY | O_NONBLOCK)) == -1)
+            if ((workers_array[i].r_fd = Pipe_Init("./pipes/r_", pid, O_RDONLY)) == -1)
             {
                 printf("Pipe_Init() failed, exiting");
             }
@@ -98,6 +104,21 @@ int main(int argc, char *argv[])
     if (DA_Run(workers_array, numWorkers, bufferSize, input_dir) == -1)
     {
         printf("DA_Run() failed, exiting");
+    }
+
+    for (int i = 0; i < numWorkers; i++)
+    {
+        string_nodePtr node = NULL;
+
+        wait(NULL);
+
+        while (workers_array[i].countries_list != NULL)
+        {
+            node = workers_array[i].countries_list;
+            workers_array[i].countries_list = workers_array[i].countries_list->next;
+            free(node->str);
+            free(node);
+        }
     }
 
     free(workers_array);

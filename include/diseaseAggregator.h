@@ -3,12 +3,20 @@
 
 #include <stdio.h>
 
+typedef struct string_node
+{
+    char *str;
+    struct string_node *next;
+} string_node;
+
+typedef string_node *string_nodePtr;
+
 typedef struct worker_info
 {
     pid_t pid;
     int r_fd;
     int w_fd;
-    char **countries;
+    string_nodePtr countries_list;
 } worker_info;
 
 typedef worker_info *worker_infoPtr;

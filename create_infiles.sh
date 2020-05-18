@@ -30,7 +30,7 @@ do
         month=$((1 + RANDOM % 12))
         year=$((2000 + RANDOM % 19))
 
-        while [ -d $input_dir/$day-$month-$year ]
+        while [ -a $input_dir/$country/$day-$month-$year.txt ]
         do
             day=$((1 + RANDOM % 30))
             month=$((1 + RANDOM % 12))
