@@ -68,6 +68,7 @@ int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size
             workers_array[count].countries_list = node;
 
             read(workers_array[count].r_fd, buffer, bufferSize);
+            // need to handle err
 
             if (++count == numWorkers)
             {
@@ -79,6 +80,8 @@ int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size
 
     for (int i = 0; i < numWorkers; i++)
     {
+        // Need to handle DrisNumber < numWorkers case
+
         // if (flag && i >= count)
         // {
         //     write(workers_array[count].w_fd, "/exit", bufferSize);

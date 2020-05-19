@@ -12,6 +12,7 @@ int Worker_Run(const size_t bufferSize, const char *input_dir)
 {
     int r_fd = 0, w_fd = 0;
     char *buffer = NULL;
+    toDoPtr toDos = NULL;
 
     if ((buffer = malloc(bufferSize)) == NULL)
     {
@@ -54,9 +55,18 @@ int Worker_Run(const size_t bufferSize, const char *input_dir)
 
         else
         {
-            write(w_fd, "OK", strlen("OK") + 1);
+            if ((toDos = add_toDo(toDos, buffer)) == NULL)
+            {
+                write(w_fd, "ERR", strlen("ERR") + 1);
+            }
+            else
+            {
+                write(w_fd, "OK", strlen("OK") + 1);
+            }
         }
     }
+
+    clear_toDos(toDos);
 
     if (close(r_fd) == -1 || close(w_fd) == -1)
     {
@@ -66,4 +76,43 @@ int Worker_Run(const size_t bufferSize, const char *input_dir)
     free(buffer);
 
     return 0;
+}
+
+toDoPtr add_toDo(toDoPtr toDos, char *country)
+{
+    toDoPtr newToDo = NULL;
+
+    if ((newToDo = malloc(sizeof(toDo))) == NULL)
+    {
+        perror("malloc");
+        return NULL;
+    }
+
+    if ((newToDo->country = malloc(strlen(country) + 1)) == NULL)
+    {
+        perror("malloc");
+        return NULL;
+    }
+
+    strncpy(newToDo->country, country, strlen(country) + 1);
+    newToDo->status = 0;
+
+    newToDo->next = toDos;
+    toDos = newToDo;
+
+    return newToDo;
+}
+
+void clear_toDos(toDoPtr toDos)
+{
+    toDoPtr tmpToDo = NULL;
+
+    while (toDos != NULL)
+    {
+        tmpToDo = toDos;
+        toDos = toDos->next;
+
+        free(tmpToDo->country);
+        free(tmpToDo);
+    }
 }

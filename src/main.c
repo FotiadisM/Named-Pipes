@@ -77,6 +77,7 @@ int main(int argc, char *argv[])
             if (Worker_Run(bufferSize, input_dir) == -1)
             {
                 printf("worker failed\n");
+                exit(-1);
             }
 
             free(workers_array);
