@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 
+#include "list.h"
+
 typedef struct toDo
 {
     char *country;
@@ -14,11 +16,11 @@ typedef toDo *toDoPtr;
 
 int Worker(const size_t bufferSize, const char *input_dir);
 
-int Worker_GetCountries(toDoPtr *toDos, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
+string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
 
 void Worker_handleSignals(struct sigaction *act);
 
-int Worker_Run(toDoPtr toDos, char *buffer, const size_t bufferSize, const char *input_dir);
+int Worker_Run(string_nodePtr countries, char *buffer, const size_t bufferSize, const char *input_dir);
 
 char *Worker_getPath(const char *input_dir, const char *country);
 

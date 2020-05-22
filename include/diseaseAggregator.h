@@ -2,14 +2,7 @@
 #define DISEASEAGGREGATOR_H
 
 #include <stdio.h>
-
-typedef struct string_node
-{
-    char *str;
-    struct string_node *next;
-} string_node;
-
-typedef string_node *string_nodePtr;
+#include "../include/list.h"
 
 typedef struct worker_info
 {
