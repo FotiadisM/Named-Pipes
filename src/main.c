@@ -59,6 +59,9 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < numWorkers; i++)
     {
+        workers_array[i].pid = 0;
+        workers_array[i].r_fd = 0;
+        workers_array[i].w_fd = 0;
         workers_array[i].countries_list = NULL;
     }
 
@@ -74,13 +77,14 @@ int main(int argc, char *argv[])
 
         else if (pid == 0)
         {
-            if (Worker_Run(bufferSize, input_dir) == -1)
+            free(workers_array);
+
+            if (Worker(bufferSize, input_dir) == -1)
             {
-                printf("worker failed\n");
+                printf("worker exiting\n");
                 exit(-1);
             }
 
-            free(workers_array);
             free(input_dir);
 
             exit(0);
