@@ -7,6 +7,9 @@
 #include <dirent.h>
 
 #include "../include/diseaseAggregator.h"
+#include "../include/pipes.h"
+
+static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir);
 
 int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
 {
@@ -29,7 +32,7 @@ int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t buff
     return 0;
 }
 
-int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
+static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
 {
     int count = 0, flag = 1;
     DIR *dirp = NULL;
@@ -43,13 +46,11 @@ int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size
 
     while ((dir_info = readdir(dirp)) != NULL)
     {
-        char buffer[24] = {'\0'};
-
         if (!(strcmp(dir_info->d_name, ".") == 0 || strcmp(dir_info->d_name, "..") == 0))
         {
             string_nodePtr node = NULL;
 
-            write(workers_array[count].w_fd, dir_info->d_name, strlen(dir_info->d_name) + 1);
+            encode(workers_array[count].w_fd, dir_info->d_name, bufferSize);
 
             if ((node = malloc(sizeof(string_node))) == NULL)
             {
@@ -66,9 +67,6 @@ int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size
             strcpy(node->str, dir_info->d_name);
             node->next = workers_array[count].countries_list;
             workers_array[count].countries_list = node;
-
-            read(workers_array[count].r_fd, buffer, bufferSize);
-            // need to handle err
 
             if (++count == numWorkers)
             {
@@ -88,7 +86,7 @@ int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size
         // }
         // else
         // {
-        write(workers_array[i].w_fd, "OK", bufferSize);
+        encode(workers_array[i].w_fd, "OK", bufferSize);
         // }
     }
 

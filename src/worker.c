@@ -11,6 +11,10 @@
 #include "../include/pipes.h"
 
 static void handler(int signum);
+static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
+static void Worker_handleSignals(struct sigaction *act);
+static int Worker_Run(string_nodePtr countries, char *buffer, const size_t bufferSize, const char *input_dir);
+static char *Worker_getPath(const char *input_dir, const char *country);
 
 volatile sig_atomic_t m_signal = 0;
 
@@ -72,25 +76,26 @@ int Worker(const size_t bufferSize, const char *input_dir)
     free(act);
     free(buffer);
     clear_stringNode(countries);
-    // clear_toDos(toDos);
 
     return 0;
 }
 
-string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize)
+static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize)
 {
+    char *country = NULL;
     string_nodePtr node = NULL;
 
     while (1)
     {
-        read(r_fd, buffer, bufferSize);
+        country = decode(r_fd, buffer, bufferSize);
 
-        if (strcmp(buffer, "OK") == 0)
+        if (strcmp(country, "OK") == 0)
         {
+            free(country);
             break;
         }
 
-        else if (strcmp(buffer, "/exit") == 0)
+        else if (strcmp(country, "/exit") == 0)
         {
             if (close(r_fd) == -1 || close(w_fd) == -1)
             {
@@ -98,34 +103,34 @@ string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer,
             }
 
             free(buffer);
+            free(country);
 
             return NULL;
         }
 
         else
         {
-            if ((node = add_stringNode(node, buffer)) == NULL)
+            printf("%s\n", country);
+            if ((node = add_stringNode(node, country)) == NULL)
             {
-                write(w_fd, "ERR", strlen("ERR") + 1);
-            }
-            else
-            {
-                write(w_fd, "OK", strlen("OK") + 1);
+                // handle err
             }
         }
+
+        free(country);
     }
 
     return node;
 }
 
-void Worker_handleSignals(struct sigaction *act)
+static void Worker_handleSignals(struct sigaction *act)
 {
     act->sa_handler = (void *)handler;
 
     sigaction(SIGINT, act, NULL);
 }
 
-int Worker_Run(string_nodePtr countries, char *buffer, const size_t bufferSize, const char *input_dir)
+static int Worker_Run(string_nodePtr countries, char *buffer, const size_t bufferSize, const char *input_dir)
 {
     char *path;
     string_nodePtr country = countries;
@@ -183,7 +188,7 @@ int Worker_Run(string_nodePtr countries, char *buffer, const size_t bufferSize, 
     return 0;
 }
 
-char *Worker_getPath(const char *input_dir, const char *country)
+static char *Worker_getPath(const char *input_dir, const char *country)
 {
     char *path = NULL;
 
@@ -203,43 +208,4 @@ char *Worker_getPath(const char *input_dir, const char *country)
 static void handler(int signum)
 {
     m_signal = signum;
-}
-
-toDoPtr add_toDo(toDoPtr toDos, char *country)
-{
-    toDoPtr newToDo = NULL;
-
-    if ((newToDo = malloc(sizeof(toDo))) == NULL)
-    {
-        perror("malloc");
-        return NULL;
-    }
-
-    if ((newToDo->country = malloc(strlen(country) + 1)) == NULL)
-    {
-        perror("malloc");
-        return NULL;
-    }
-
-    strncpy(newToDo->country, country, strlen(country) + 1);
-    newToDo->status = 0;
-
-    newToDo->next = toDos;
-    toDos = newToDo;
-
-    return newToDo;
-}
-
-void clear_toDos(toDoPtr toDos)
-{
-    toDoPtr tmpToDo = NULL;
-
-    while (toDos != NULL)
-    {
-        tmpToDo = toDos;
-        toDos = toDos->next;
-
-        free(tmpToDo->country);
-        free(tmpToDo);
-    }
 }

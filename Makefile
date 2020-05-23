@@ -27,7 +27,7 @@ run:
 	./$(BDIR)/$(EXECUTABLE) -w 4 -b 512 -i ./data
 
 valgrind:
-	valgrind --leak-check=full ./$(BDIR)/$(EXECUTABLE) -w 4 -b 512 -i ./data 
+	valgrind --leak-check=full ./$(BDIR)/$(EXECUTABLE) -w 4 -b 5 -i ./data 
 
 clean:
 	rm -f pipes/r_* pipes/w_*
