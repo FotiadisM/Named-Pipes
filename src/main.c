@@ -82,12 +82,12 @@ int main(int argc, char *argv[])
             if (Worker(bufferSize, input_dir) == -1)
             {
                 printf("worker exiting\n");
-                exit(-1);
+                exit(EXIT_FAILURE);
             }
 
             free(input_dir);
 
-            exit(0);
+            exit(EXIT_SUCCESS);
         }
 
         else
@@ -113,17 +113,9 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < numWorkers; i++)
     {
-        string_nodePtr node = NULL;
-
         wait(NULL);
 
-        while (workers_array[i].countries_list != NULL)
-        {
-            node = workers_array[i].countries_list;
-            workers_array[i].countries_list = workers_array[i].countries_list->next;
-            free(node->str);
-            free(node);
-        }
+        clear_stringNode(workers_array[i].countries_list);
     }
 
     free(workers_array);

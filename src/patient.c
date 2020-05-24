@@ -1,5 +1,6 @@
-#include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <wordexp.h>
 #include <string.h>
 
 #include "../include/patient.h"
@@ -122,6 +123,50 @@ void Patient_Close(PatientPtr p)
     }
 
     free(p);
+}
+
+PatientPtr Patient_getPatient(FILE *filePtr, const char *country, const char *entry)
+{
+    wordexp_t p;
+    size_t len = 0;
+    PatientPtr patient = NULL;
+    char *line = NULL, *date = NULL;
+
+    if (getline(&line, &len, filePtr) == -1)
+    {
+        free(line);
+        return NULL;
+    }
+
+    strtok(line, "\n");
+    wordexp(line, &p, 0);
+
+    if ((date = malloc(strlen(entry) + 1)) == NULL)
+    {
+        perror("malloc");
+        return NULL;
+    }
+    strcpy(date, entry);
+    strtok(date, ".");
+
+    if (!strcmp(p.we_wordv[2], "ENTER"))
+    {
+        if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country, date)) == NULL)
+        {
+            printf("Patient_Init() failed");
+            return NULL;
+        }
+    }
+    else
+    {
+        // search for patient, add exit date
+    }
+
+    wordfree(&p);
+    free(date);
+    free(line);
+
+    return patient;
 }
 
 int Patient_Compare(PatientPtr p1, PatientPtr p2)

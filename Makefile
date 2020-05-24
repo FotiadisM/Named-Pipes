@@ -24,7 +24,7 @@ $(BDIR)/$(EXECUTABLE): $(OBJ)
 .PHONY: clean run valgrind
 
 run:
-	./$(BDIR)/$(EXECUTABLE) -w 4 -b 512 -i ./data
+	./$(BDIR)/$(EXECUTABLE) -w 4 -b 5 -i ./data
 
 valgrind:
 	valgrind --leak-check=full ./$(BDIR)/$(EXECUTABLE) -w 4 -b 5 -i ./data 

@@ -9,11 +9,12 @@
 
 #include "../include/worker.h"
 #include "../include/pipes.h"
+#include "../include/patient.h"
 
 static void handler(int signum);
 static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
 static void Worker_handleSignals(struct sigaction *act);
-static int Worker_Run(string_nodePtr countries, char *buffer, const size_t bufferSize, const char *input_dir);
+static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir);
 static char *Worker_getPath(const char *input_dir, const char *country);
 
 volatile sig_atomic_t m_signal = 0;
@@ -63,7 +64,7 @@ int Worker(const size_t bufferSize, const char *input_dir)
 
     // Worker_handleSignals(act);
 
-    if (Worker_Run(countries, buffer, bufferSize, input_dir) == -1)
+    if (Worker_Run(countries, r_fd, w_fd, buffer, bufferSize, input_dir) == -1)
     {
         printf("Worker_Run() failed\n");
     }
@@ -82,20 +83,20 @@ int Worker(const size_t bufferSize, const char *input_dir)
 
 static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize)
 {
-    char *country = NULL;
+    char *str = NULL;
     string_nodePtr node = NULL;
 
     while (1)
     {
-        country = decode(r_fd, buffer, bufferSize);
+        str = decode(r_fd, buffer, bufferSize);
 
-        if (strcmp(country, "OK") == 0)
+        if (!strcmp(str, "OK"))
         {
-            free(country);
+            free(str);
             break;
         }
 
-        else if (strcmp(country, "/exit") == 0)
+        else if (!strcmp(str, "/exit"))
         {
             if (close(r_fd) == -1 || close(w_fd) == -1)
             {
@@ -103,21 +104,21 @@ static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *
             }
 
             free(buffer);
-            free(country);
+            free(str);
 
-            return NULL;
+            exit(EXIT_SUCCESS);
         }
 
         else
         {
-            printf("%s\n", country);
-            if ((node = add_stringNode(node, country)) == NULL)
+            if ((node = add_stringNode(node, str)) == NULL)
             {
-                // handle err
+                printf("add_stringNode() failed");
+                return NULL;
             }
         }
 
-        free(country);
+        free(str);
     }
 
     return node;
@@ -130,14 +131,14 @@ static void Worker_handleSignals(struct sigaction *act)
     sigaction(SIGINT, act, NULL);
 }
 
-static int Worker_Run(string_nodePtr countries, char *buffer, const size_t bufferSize, const char *input_dir)
+static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir)
 {
     char *path;
+    PatientPtr patient = NULL;
     string_nodePtr country = countries;
 
     while (country != NULL)
     {
-        int fd = 0;
         DIR *dirp = NULL;
         struct dirent *dir_info = NULL;
 
@@ -156,6 +157,7 @@ static int Worker_Run(string_nodePtr countries, char *buffer, const size_t buffe
         while ((dir_info = readdir(dirp)) != NULL)
         {
             char *file = NULL;
+            FILE *filePtr = NULL;
 
             if (!(strcmp(dir_info->d_name, ".") == 0 || strcmp(dir_info->d_name, "..") == 0))
             {
@@ -165,15 +167,19 @@ static int Worker_Run(string_nodePtr countries, char *buffer, const size_t buffe
                     return -1;
                 }
 
-                if ((fd = open(file, O_RDONLY)) == -1)
+                if ((filePtr = fopen(file, "r")) == NULL)
                 {
-                    perror("open()");
+                    perror("fopen()");
                     return -1;
                 }
 
-                // read file etc
+                while ((patient = Patient_getPatient(filePtr, country->str, dir_info->d_name)) != NULL)
+                {
+                    // free(patient);
+                    break;
+                }
 
-                close(fd);
+                fclose(filePtr);
 
                 free(file);
             }

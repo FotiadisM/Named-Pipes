@@ -100,6 +100,7 @@ char *decode(const int fd, char *buffer, const size_t bufferSize)
     if ((r_buffer = malloc(r_buffer_size)) == NULL)
     {
         perror("malloc");
+        return NULL;
     }
 
     for (size_t i = 0; i < r_buffer_size / bufferSize; i++)
