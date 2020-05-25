@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <wordexp.h>
 
 #include "../include/worker.h"
 #include "../include/pipes.h"
@@ -133,15 +134,17 @@ static void Worker_handleSignals(struct sigaction *act)
 
 static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir)
 {
-    char *path;
+    wordexp_t p;
+    size_t len = 0;
+    DIR *dirp = NULL;
+    FILE *filePtr = NULL;
     PatientPtr patient = NULL;
+    struct dirent *dir_info = NULL;
     string_nodePtr country = countries;
+    char *path = NULL, *file = NULL, *line = NULL;
 
     while (country != NULL)
     {
-        DIR *dirp = NULL;
-        struct dirent *dir_info = NULL;
-
         if ((path = Worker_getPath(input_dir, country->str)) == NULL)
         {
             perror("Worker_getPath()");
@@ -156,9 +159,6 @@ static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, 
 
         while ((dir_info = readdir(dirp)) != NULL)
         {
-            char *file = NULL;
-            FILE *filePtr = NULL;
-
             if (!(strcmp(dir_info->d_name, ".") == 0 || strcmp(dir_info->d_name, "..") == 0))
             {
                 if ((file = Worker_getPath(path, dir_info->d_name)) == NULL)
@@ -173,15 +173,31 @@ static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, 
                     return -1;
                 }
 
-                while ((patient = Patient_getPatient(filePtr, country->str, dir_info->d_name)) != NULL)
+                while (getline(&line, &len, filePtr) != -1)
                 {
-                    // free(patient);
-                    break;
+                    strtok(line, "\n");
+                    wordexp(line, &p, 0);
+
+                    if (!strcmp(p.we_wordv[1], "ENTER"))
+                    {
+                        if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country->str, file)) == NULL)
+                        {
+                            printf("Patient_Init() failed");
+                            return -1;
+                        }
+                        patient->exit = NULL;
+
+                        Patient_Close(patient);
+                    }
+                    else
+                    {
+                    }
+
+                    wordfree(&p);
                 }
 
-                fclose(filePtr);
-
                 free(file);
+                fclose(filePtr);
             }
         }
 
@@ -190,6 +206,8 @@ static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, 
 
         country = country->next;
     }
+
+    free(line);
 
     return 0;
 }

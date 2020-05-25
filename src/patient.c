@@ -12,8 +12,9 @@ PatientPtr Patient_Init(
     const char *age,
     const char *disease,
     const char *country,
-    const char *date)
+    const char *file)
 {
+    char *date = NULL;
     PatientPtr p = NULL;
 
     if ((p = malloc(sizeof(Patient))) == NULL)
@@ -71,11 +72,22 @@ PatientPtr Patient_Init(
     strcpy(p->disease, disease);
     strcpy(p->country, country);
 
+    if ((date = malloc(strlen(file) + 1)) == NULL)
+    {
+        perror("malloc");
+        Patient_Close(p);
+        return NULL;
+    }
+    strcpy(date, file);
+    strtok(date, ".");
+
     if ((p->entry = Date_Init(date)) == NULL)
     {
         Patient_Close(p);
         return NULL;
     }
+
+    free(date);
 
     return p;
 }
@@ -117,7 +129,7 @@ void Patient_Close(PatientPtr p)
         free(p->entry);
     }
 
-    if (p->entry != NULL)
+    if (p->exit != NULL)
     {
         free(p->exit);
     }
@@ -149,13 +161,14 @@ PatientPtr Patient_getPatient(FILE *filePtr, const char *country, const char *en
     strcpy(date, entry);
     strtok(date, ".");
 
-    if (!strcmp(p.we_wordv[2], "ENTER"))
+    if (!strcmp(p.we_wordv[1], "ENTER"))
     {
         if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country, date)) == NULL)
         {
             printf("Patient_Init() failed");
             return NULL;
         }
+        patient->exit = NULL;
     }
     else
     {
