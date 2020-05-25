@@ -120,6 +120,7 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
         }
 
         if (pselect(maxfd + 1, &fds, NULL, NULL, NULL, NULL) == -1)
+
         {
             perror("select()");
         }

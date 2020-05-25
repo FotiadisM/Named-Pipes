@@ -1,8 +1,6 @@
 #ifndef PERSON_H
 #define PERSON_H
 
-#include <stdio.h>
-
 #include "./date.h"
 
 #define ENTER 1
@@ -14,10 +12,10 @@ typedef struct Patient
     char *fName;
     char *lName;
     char *age;
-    char *disease;
+    char *diseaseID;
     char *country;
-    DatePtr entry;
-    DatePtr exit;
+    DatePtr entryDate;
+    DatePtr exitDate;
 } Patient;
 
 typedef Patient *PatientPtr;
@@ -27,14 +25,14 @@ PatientPtr Patient_Init(
     const char *fName,
     const char *lName,
     const char *age,
-    const char *disease,
+    const char *diseaseID,
     const char *country,
     const char *date);
 
 void Patient_Close(PatientPtr p);
 
-PatientPtr Patient_getPatient(FILE *filePtr, const char *country, const char *entry);
-
 int Patient_Compare(PatientPtr p1, PatientPtr p2);
+
+void Patient_Print(const PatientPtr patient);
 
 #endif

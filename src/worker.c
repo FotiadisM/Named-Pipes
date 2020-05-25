@@ -10,12 +10,12 @@
 
 #include "../include/worker.h"
 #include "../include/pipes.h"
-#include "../include/patient.h"
+#include "../include/hashTable.h"
 
 static void handler(int signum);
 static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
 static void Worker_handleSignals(struct sigaction *act);
-static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir);
+static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir);
 static char *Worker_getPath(const char *input_dir, const char *country);
 
 volatile sig_atomic_t m_signal = 0;
@@ -26,6 +26,8 @@ int Worker(const size_t bufferSize, const char *input_dir)
     char *buffer = NULL;
     struct sigaction *act = NULL;
     string_nodePtr countries = NULL;
+    ListPtr list = NULL;
+    HashTablePtr diseaseHT = NULL, countryHT = NULL;
 
     if ((w_fd = Pipe_Init("./pipes/r_", getpid(), O_WRONLY)) == -1)
     {
@@ -42,6 +44,20 @@ int Worker(const size_t bufferSize, const char *input_dir)
     if ((buffer = malloc(bufferSize)) == NULL)
     {
         perror("malloc");
+        return -1;
+    }
+
+    if ((list = List_Init()) == NULL)
+    {
+        return -1;
+    }
+
+    if ((diseaseHT = HashTable_Init(10, 24)) == NULL)
+    {
+        return -1;
+    }
+    if ((countryHT = HashTable_Init(10, 24)) == NULL)
+    {
         return -1;
     }
 
@@ -65,10 +81,12 @@ int Worker(const size_t bufferSize, const char *input_dir)
 
     // Worker_handleSignals(act);
 
-    if (Worker_Run(countries, r_fd, w_fd, buffer, bufferSize, input_dir) == -1)
+    if (Worker_Run(list, diseaseHT, countryHT, countries, r_fd, w_fd, buffer, bufferSize, input_dir) == -1)
     {
         printf("Worker_Run() failed\n");
     }
+
+    List_Print(list);
 
     if (close(r_fd) == -1 || close(w_fd) == -1)
     {
@@ -78,6 +96,10 @@ int Worker(const size_t bufferSize, const char *input_dir)
     free(act);
     free(buffer);
     clear_stringNode(countries);
+
+    HashTable_Close(diseaseHT);
+    HashTable_Close(countryHT);
+    List_Close(list, F_PATIENT);
 
     return 0;
 }
@@ -132,12 +154,13 @@ static void Worker_handleSignals(struct sigaction *act)
     sigaction(SIGINT, act, NULL);
 }
 
-static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir)
+static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir)
 {
     wordexp_t p;
     size_t len = 0;
     DIR *dirp = NULL;
     FILE *filePtr = NULL;
+    ListNodePtr node = NULL;
     PatientPtr patient = NULL;
     struct dirent *dir_info = NULL;
     string_nodePtr country = countries;
@@ -185,9 +208,22 @@ static int Worker_Run(string_nodePtr countries, const int r_fd, const int w_fd, 
                             printf("Patient_Init() failed");
                             return -1;
                         }
-                        patient->exit = NULL;
+                        patient->exitDate = NULL;
 
-                        Patient_Close(patient);
+                        if ((node = List_InsertSorted(list, patient)) == NULL)
+                        {
+                            return -1;
+                        }
+
+                        if (HashTable_Insert(h1, patient->diseaseID, node) == -1)
+                        {
+                            return -1;
+                        }
+
+                        if (HashTable_Insert(h2, patient->country, node) == -1)
+                        {
+                            return -1;
+                        }
                     }
                     else
                     {

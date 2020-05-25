@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <wordexp.h>
@@ -10,7 +11,7 @@ PatientPtr Patient_Init(
     const char *fName,
     const char *lName,
     const char *age,
-    const char *disease,
+    const char *diseaseID,
     const char *country,
     const char *file)
 {
@@ -51,7 +52,7 @@ PatientPtr Patient_Init(
         return NULL;
     }
 
-    else if ((p->disease = malloc(strlen(disease) + 1)) == NULL)
+    else if ((p->diseaseID = malloc(strlen(diseaseID) + 1)) == NULL)
     {
         perror("malloc");
         Patient_Close(p);
@@ -69,7 +70,7 @@ PatientPtr Patient_Init(
     strcpy(p->fName, fName);
     strcpy(p->lName, lName);
     strcpy(p->age, age);
-    strcpy(p->disease, disease);
+    strcpy(p->diseaseID, diseaseID);
     strcpy(p->country, country);
 
     if ((date = malloc(strlen(file) + 1)) == NULL)
@@ -81,7 +82,7 @@ PatientPtr Patient_Init(
     strcpy(date, file);
     strtok(date, ".");
 
-    if ((p->entry = Date_Init(date)) == NULL)
+    if ((p->entryDate = Date_Init(date)) == NULL)
     {
         Patient_Close(p);
         return NULL;
@@ -114,9 +115,9 @@ void Patient_Close(PatientPtr p)
         free(p->age);
     }
 
-    if (p->disease != NULL)
+    if (p->diseaseID != NULL)
     {
-        free(p->disease);
+        free(p->diseaseID);
     }
 
     if (p->country != NULL)
@@ -124,62 +125,17 @@ void Patient_Close(PatientPtr p)
         free(p->country);
     }
 
-    if (p->entry != NULL)
+    if (p->entryDate != NULL)
     {
-        free(p->entry);
+        free(p->entryDate);
     }
 
-    if (p->exit != NULL)
+    if (p->exitDate != NULL)
     {
-        free(p->exit);
+        free(p->exitDate);
     }
 
     free(p);
-}
-
-PatientPtr Patient_getPatient(FILE *filePtr, const char *country, const char *entry)
-{
-    wordexp_t p;
-    size_t len = 0;
-    PatientPtr patient = NULL;
-    char *line = NULL, *date = NULL;
-
-    if (getline(&line, &len, filePtr) == -1)
-    {
-        free(line);
-        return NULL;
-    }
-
-    strtok(line, "\n");
-    wordexp(line, &p, 0);
-
-    if ((date = malloc(strlen(entry) + 1)) == NULL)
-    {
-        perror("malloc");
-        return NULL;
-    }
-    strcpy(date, entry);
-    strtok(date, ".");
-
-    if (!strcmp(p.we_wordv[1], "ENTER"))
-    {
-        if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country, date)) == NULL)
-        {
-            printf("Patient_Init() failed");
-            return NULL;
-        }
-        patient->exit = NULL;
-    }
-    else
-    {
-        // search for patient, add exit date
-    }
-
-    wordfree(&p);
-    free(date);
-    free(line);
-
-    return patient;
 }
 
 int Patient_Compare(PatientPtr p1, PatientPtr p2)
@@ -205,4 +161,17 @@ int Patient_Compare(PatientPtr p1, PatientPtr p2)
     }
 
     return 0;
+}
+
+void Patient_Print(const PatientPtr patient)
+{
+    printf("%s %s %s %s %s %d-%d-%d ", patient->id, patient->fName, patient->lName, patient->diseaseID, patient->country, patient->entryDate->day, patient->entryDate->month, patient->entryDate->year);
+    if (patient->exitDate != NULL)
+    {
+        printf("%d-%d-%d\n", patient->exitDate->day, patient->exitDate->month, patient->exitDate->year);
+    }
+    else
+    {
+        printf("-\n");
+    }
 }

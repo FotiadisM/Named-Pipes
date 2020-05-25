@@ -9,10 +9,10 @@ SDIR = src
 
 EXECUTABLE = diseaseAggregator
 
-_DEPS = diseaseAggregator.h worker.h pipes.h patient.h date.h list.h
+_DEPS = diseaseAggregator.h worker.h pipes.h list.h hashTable.h AVL.h patient.h date.h 
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
 
-_OBJ = main.o diseaseAggregator.o worker.o pipes.o patient.o date.o list.o
+_OBJ = main.o diseaseAggregator.o worker.o pipes.o list.o hashTable.o AVL.o patient.o date.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 $(ODIR)/%.o: $(SDIR)/%.c $(DEPS)
