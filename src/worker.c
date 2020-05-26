@@ -14,8 +14,10 @@
 
 static void handler(int signum);
 static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
-static void Worker_handleSignals(struct sigaction *act);
 static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir);
+static void Worker_handleSignals(struct sigaction *act);
+static int validatePatient(const wordexp_t *p, const char *country, const ListPtr list);
+static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list);
 static char *Worker_getPath(const char *input_dir, const char *country);
 
 volatile sig_atomic_t m_signal = 0;
@@ -85,8 +87,6 @@ int Worker(const size_t bufferSize, const char *input_dir)
     {
         printf("Worker_Run() failed\n");
     }
-
-    List_Print(list);
 
     if (close(r_fd) == -1 || close(w_fd) == -1)
     {
@@ -203,30 +203,44 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
 
                     if (!strcmp(p.we_wordv[1], "ENTER"))
                     {
-                        if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country->str, file)) == NULL)
+                        if (validatePatient(&p, country->str, list))
                         {
-                            printf("Patient_Init() failed");
-                            return -1;
-                        }
-                        patient->exitDate = NULL;
+                            if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country->str, file)) == NULL)
+                            {
+                                printf("Patient_Init() failed");
+                                return -1;
+                            }
+                            patient->exitDate = NULL;
 
-                        if ((node = List_InsertSorted(list, patient)) == NULL)
-                        {
-                            return -1;
-                        }
+                            if ((node = List_InsertSorted(list, patient)) == NULL)
+                            {
+                                return -1;
+                            }
 
-                        if (HashTable_Insert(h1, patient->diseaseID, node) == -1)
-                        {
-                            return -1;
-                        }
+                            if (HashTable_Insert(h1, patient->diseaseID, node) == -1)
+                            {
+                                return -1;
+                            }
 
-                        if (HashTable_Insert(h2, patient->country, node) == -1)
-                        {
-                            return -1;
+                            if (HashTable_Insert(h2, patient->country, node) == -1)
+                            {
+                                return -1;
+                            }
                         }
                     }
                     else
                     {
+                        if ((patient = getPatient(&p, country->str, list)) == NULL)
+                        {
+                            // printf("Patient not registered\n");
+                        }
+                        else
+                        {
+                            if (Patient_addExitDate(patient, file) == -1)
+                            {
+                                printf("Patient_addExitDate() failed");
+                            }
+                        }
                     }
 
                     wordfree(&p);
@@ -248,6 +262,43 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
     return 0;
 }
 
+static void handler(int signum)
+{
+    m_signal = signum;
+}
+
+static int validatePatient(const wordexp_t *p, const char *country, const ListPtr list)
+{
+    ListNodePtr node = list->head;
+
+    while (node != NULL)
+    {
+        if (Patient_Compare(node->patient, p->we_wordv[0], p->we_wordv[2], p->we_wordv[3], p->we_wordv[4], country, p->we_wordv[5]))
+        {
+            return 0;
+        }
+        node = node->next;
+    }
+
+    return 1;
+}
+
+static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list)
+{
+    ListNodePtr node = list->head;
+
+    while (node != NULL)
+    {
+        if (!Patient_Compare(node->patient, p->we_wordv[0], p->we_wordv[2], p->we_wordv[3], p->we_wordv[4], country, p->we_wordv[5]))
+        {
+            return node->patient;
+        }
+        node = node->next;
+    }
+
+    return NULL;
+}
+
 static char *Worker_getPath(const char *input_dir, const char *country)
 {
     char *path = NULL;
@@ -263,9 +314,4 @@ static char *Worker_getPath(const char *input_dir, const char *country)
     strcat(path, country);
 
     return path;
-}
-
-static void handler(int signum)
-{
-    m_signal = signum;
 }

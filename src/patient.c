@@ -138,24 +138,58 @@ void Patient_Close(PatientPtr p)
     free(p);
 }
 
-int Patient_Compare(PatientPtr p1, PatientPtr p2)
+int Patient_addExitDate(PatientPtr p, const char *file)
 {
-    if (strcmp(p1->id, p2->id))
+    char *date = NULL;
+
+    if ((date = malloc(strlen(file) + 1)) == NULL)
+    {
+        perror("malloc");
+        return -1;
+    }
+
+    strcpy(date, file);
+    strtok(date, ".");
+
+    if ((p->exitDate = Date_Init(date)) == NULL)
+    {
+        printf("Date_Init() failed");
+        return -1;
+    }
+
+    free(date);
+
+    return 0;
+}
+
+int Patient_Compare(PatientPtr p1, const char *id, const char *fName, const char *lName, const char *disease, const char *country, const char *age)
+{
+    if (strcmp(p1->id, id))
     {
         return -1;
     }
 
-    else if (strcmp(p1->fName, p2->fName))
+    else if (strcmp(p1->fName, fName))
     {
         return -1;
     }
 
-    else if (strcmp(p1->lName, p2->lName))
+    else if (strcmp(p1->lName, lName))
     {
         return -1;
     }
 
-    else if (strcmp(p1->age, p2->age))
+    else if (strcmp(p1->diseaseID, disease))
+    {
+        return -1;
+    }
+
+    else if (strcmp(p1->country, country))
+    {
+        return -1;
+    }
+
+    else if (strcmp(p1->age, age))
     {
         return -1;
     }

@@ -30,9 +30,8 @@ PatientPtr Patient_Init(
     const char *date);
 
 void Patient_Close(PatientPtr p);
-
-int Patient_Compare(PatientPtr p1, PatientPtr p2);
-
+int Patient_addExitDate(PatientPtr p, const char *file);
+int Patient_Compare(PatientPtr p1, const char *id, const char *fName, const char *lName, const char *disease, const char *country, const char *age);
 void Patient_Print(const PatientPtr patient);
 
 #endif
