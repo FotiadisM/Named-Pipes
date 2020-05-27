@@ -14,7 +14,7 @@
 
 static void handler(int signum);
 static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
-static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir);
+static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int w_fd, const size_t bufferSize, const char *input_dir);
 static void Worker_handleSignals(struct sigaction *act);
 static int validatePatient(const wordexp_t *p, const char *country, const ListPtr list);
 static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list);
@@ -83,7 +83,7 @@ int Worker(const size_t bufferSize, const char *input_dir)
 
     // Worker_handleSignals(act);
 
-    if (Worker_Run(list, diseaseHT, countryHT, countries, r_fd, w_fd, buffer, bufferSize, input_dir) == -1)
+    if (Worker_Run(list, diseaseHT, countryHT, countries, w_fd, bufferSize, input_dir) == -1)
     {
         printf("Worker_Run() failed\n");
     }
@@ -154,7 +154,7 @@ static void Worker_handleSignals(struct sigaction *act)
     sigaction(SIGINT, act, NULL);
 }
 
-static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int r_fd, const int w_fd, char *buffer, const size_t bufferSize, const char *input_dir)
+static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int w_fd, const size_t bufferSize, const char *input_dir)
 {
     wordexp_t p;
     size_t len = 0;

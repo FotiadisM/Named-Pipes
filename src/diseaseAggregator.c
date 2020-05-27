@@ -29,11 +29,11 @@ int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t buff
         return -1;
     }
 
-    // if (DA_main(workers_array, numWorkers, bufferSize) == -1)
-    // {
-    //     printf("DA_main() failed");
-    //     return -1;
-    // }
+    if (DA_main(workers_array, numWorkers, bufferSize) == -1)
+    {
+        printf("DA_main() failed");
+        return -1;
+    }
 
     free(buffer);
 
@@ -96,7 +96,7 @@ static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, con
 static int DA_main(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize)
 {
     fd_set fds;
-    int maxfd = 0;
+    int maxfd = 0, count = 0;
     char *buffer = NULL, *str = NULL;
 
     if ((buffer = malloc(bufferSize)) == NULL)
@@ -130,7 +130,18 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
             if (FD_ISSET(workers_array[i].r_fd, &fds))
             {
                 str = decode(workers_array[i].r_fd, buffer, bufferSize);
+
+                if (!strcmp(str, "OK"))
+                {
+                    printf("revieved count %d\n", count);
+                    count++;
+                }
             }
+        }
+
+        if (count == numWorkers)
+        {
+            break;
         }
 
         free(str);

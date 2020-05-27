@@ -142,13 +142,12 @@ int Patient_addExitDate(PatientPtr p, const char *file)
 {
     char *date = NULL;
 
-    if ((date = malloc(strlen(file) + 1)) == NULL)
+    if ((date = strdup(file)) == NULL)
     {
-        perror("malloc");
+        perror("strdup");
         return -1;
     }
 
-    strcpy(date, file);
     strtok(date, ".");
 
     if ((p->exitDate = Date_Init(date)) == NULL)

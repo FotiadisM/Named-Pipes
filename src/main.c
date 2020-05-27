@@ -33,11 +33,10 @@ int main(int argc, char *argv[])
             }
             break;
         case 'i':
-            if ((input_dir = malloc(strlen(optarg) + 1)) == NULL)
+            if ((input_dir = strdup(optarg)) == NULL)
             {
                 perror("malloc");
             }
-            strcpy(input_dir, optarg);
             break;
         case '?':
             fprintf(stderr, "Usage: ./diseaseAggregator –w <numWorkers> -b <bufferSize> -i <input_dir>\n");
