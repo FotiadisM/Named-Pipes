@@ -12,15 +12,27 @@
 #include "../include/pipes.h"
 #include "../include/hashTable.h"
 
-static void handler(int signum);
+volatile sig_atomic_t m_signal = 0;
+
+static int Worker_Init(int *w_fd, int *r_fd, char **buffer, const size_t bufferSize, ListPtr *list, HashTablePtr *h1, HashTablePtr *h2, struct sigaction **act);
+
 static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
 static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int w_fd, const size_t bufferSize, const char *input_dir);
+
 static void Worker_handleSignals(struct sigaction *act);
+static void handler(int signum);
+
 static int validatePatient(const wordexp_t *p, const char *country, const ListPtr list);
 static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list);
 static char *Worker_getPath(const char *input_dir, const char *country);
 
-volatile sig_atomic_t m_signal = 0;
+static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t bufferSize, const char *country, const char *file);
+
+static ageInfoPtr ageInfo_Init();
+static void ageInfo_add(ageInfoPtr ag, const char *age_str);
+static statsPtr stats_Init();
+static statsPtr stats_add(statsPtr st, const char *disease, const char *age_str);
+static void stats_close(statsPtr st);
 
 int Worker(const size_t bufferSize, const char *input_dir)
 {
@@ -31,41 +43,9 @@ int Worker(const size_t bufferSize, const char *input_dir)
     ListPtr list = NULL;
     HashTablePtr diseaseHT = NULL, countryHT = NULL;
 
-    if ((w_fd = Pipe_Init("./pipes/r_", getpid(), O_WRONLY)) == -1)
+    if (Worker_Init(&w_fd, &r_fd, &buffer, bufferSize, &list, &diseaseHT, &countryHT, &act) == -1)
     {
-        printf("Pipe_Init() failed\n");
-        return -1;
-    }
-
-    if ((r_fd = Pipe_Init("./pipes/w_", getpid(), O_RDONLY)) == -1)
-    {
-        printf("Pipe_Init() failed");
-        return -1;
-    }
-
-    if ((buffer = malloc(bufferSize)) == NULL)
-    {
-        perror("malloc");
-        return -1;
-    }
-
-    if ((list = List_Init()) == NULL)
-    {
-        return -1;
-    }
-
-    if ((diseaseHT = HashTable_Init(10, 24)) == NULL)
-    {
-        return -1;
-    }
-    if ((countryHT = HashTable_Init(10, 24)) == NULL)
-    {
-        return -1;
-    }
-
-    if ((act = malloc(sizeof(struct sigaction))) == NULL)
-    {
-        perror("malloc");
+        printf("Worker_Init() failed");
         return -1;
     }
 
@@ -100,6 +80,49 @@ int Worker(const size_t bufferSize, const char *input_dir)
     HashTable_Close(diseaseHT);
     HashTable_Close(countryHT);
     List_Close(list, F_PATIENT);
+
+    return 0;
+}
+
+static int Worker_Init(int *w_fd, int *r_fd, char **buffer, const size_t bufferSize, ListPtr *list, HashTablePtr *h1, HashTablePtr *h2, struct sigaction **act)
+{
+    if ((*w_fd = Pipe_Init("./pipes/r_", getpid(), O_WRONLY)) == -1)
+    {
+        printf("Pipe_Init() failed\n");
+        return -1;
+    }
+
+    if ((*r_fd = Pipe_Init("./pipes/w_", getpid(), O_RDONLY)) == -1)
+    {
+        printf("Pipe_Init() failed");
+        return -1;
+    }
+
+    if ((*buffer = malloc(bufferSize)) == NULL)
+    {
+        perror("malloc");
+        return -1;
+    }
+
+    if ((*list = List_Init()) == NULL)
+    {
+        return -1;
+    }
+
+    if ((*h1 = HashTable_Init(10, 24)) == NULL)
+    {
+        return -1;
+    }
+    if ((*h2 = HashTable_Init(10, 24)) == NULL)
+    {
+        return -1;
+    }
+
+    if ((*act = malloc(sizeof(struct sigaction))) == NULL)
+    {
+        perror("malloc");
+        return -1;
+    }
 
     return 0;
 }
@@ -182,6 +205,8 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
 
         while ((dir_info = readdir(dirp)) != NULL)
         {
+            statsPtr st = NULL;
+
             if (!(strcmp(dir_info->d_name, ".") == 0 || strcmp(dir_info->d_name, "..") == 0))
             {
                 if ((file = Worker_getPath(path, dir_info->d_name)) == NULL)
@@ -205,7 +230,13 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
                     {
                         if (validatePatient(&p, country->str, list))
                         {
-                            if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country->str, file)) == NULL)
+                            if ((st = stats_add(st, p.we_wordv[4], p.we_wordv[5])) == NULL)
+                            {
+                                printf("stats_add() failed");
+                                return -1;
+                            }
+
+                            if ((patient = Patient_Init(p.we_wordv[0], p.we_wordv[2], p.we_wordv[3], p.we_wordv[5], p.we_wordv[4], country->str, dir_info->d_name)) == NULL)
                             {
                                 printf("Patient_Init() failed");
                                 return -1;
@@ -232,11 +263,11 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
                     {
                         if ((patient = getPatient(&p, country->str, list)) == NULL)
                         {
-                            // printf("Patient not registered\n");
+                            // printf("Error: patient not registered\n");
                         }
                         else
                         {
-                            if (Patient_addExitDate(patient, file) == -1)
+                            if (Patient_addExitDate(patient, dir_info->d_name) == -1)
                             {
                                 printf("Patient_addExitDate() failed");
                             }
@@ -246,9 +277,17 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
                     wordfree(&p);
                 }
 
+                if (Worker_sendStatistics(st, w_fd, bufferSize, country->str, dir_info->d_name) == -1)
+                {
+                    perror("Worker_sendStatistics");
+                    return -1;
+                }
+
                 free(file);
                 fclose(filePtr);
             }
+
+            stats_close(st);
         }
 
         free(path);
@@ -314,4 +353,149 @@ static char *Worker_getPath(const char *input_dir, const char *country)
     strcat(path, country);
 
     return path;
+}
+
+static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t bufferSize, const char *country, const char *file)
+{
+    char *date = NULL;
+
+    if ((date = strdup(file)) == NULL)
+    {
+        perror("strdup");
+        return -1;
+    }
+    strtok(date, ".");
+
+    statsPtr tmp = st;
+    while (tmp != NULL)
+    {
+        printf("%s %s %d %d %d %d\n", date, st->disease, st->ag->ag1, st->ag->ag2, st->ag->ag3, st->ag->ag4);
+        tmp = tmp->next;
+    }
+
+    free(date);
+
+    return 0;
+}
+
+static ageInfoPtr ageInfo_Init()
+{
+    ageInfoPtr ag = NULL;
+
+    if ((ag = malloc(sizeof(ageInfo))) == NULL)
+    {
+        perror("malloc");
+        return NULL;
+    }
+
+    ag->ag1 = ag->ag2 = ag->ag3 = ag->ag4 = 0;
+
+    return ag;
+}
+
+static void ageInfo_add(ageInfoPtr ag, const char *age_str)
+{
+    int age = (int)strtol(age_str, NULL, 10);
+
+    if (age <= 20)
+    {
+        ag->ag1++;
+    }
+    else if (age <= 40)
+    {
+        ag->ag2++;
+    }
+    else if (age <= 60)
+    {
+        ag->ag3++;
+    }
+    else
+    {
+        ag->ag4++;
+    }
+}
+
+static statsPtr stats_Init(const char *disease)
+{
+    statsPtr st = NULL;
+
+    if ((st = malloc(sizeof(stats))) == NULL)
+    {
+        perror("malloc");
+        return NULL;
+    }
+
+    if ((st->ag = ageInfo_Init()) == NULL)
+    {
+        perror("ageInfo_Init() failed");
+        return NULL;
+    }
+
+    if ((st->disease = strdup(disease)) == NULL)
+    {
+        perror("strdup");
+        return NULL;
+    }
+    st->next = NULL;
+
+    return st;
+}
+
+static statsPtr stats_add(statsPtr st, const char *disease, const char *age_str)
+{
+    statsPtr tmp = st;
+
+    if (st == NULL)
+    {
+        if ((st = stats_Init(disease)) == NULL)
+        {
+            perror("stats_Init");
+            return NULL;
+        }
+        ageInfo_add(st->ag, age_str);
+
+        return st;
+    }
+
+    while (tmp->next != NULL)
+    {
+        if (!strcmp(tmp->disease, disease))
+        {
+            break;
+        }
+
+        tmp = tmp->next;
+    }
+
+    if (!strcmp(tmp->disease, disease))
+    {
+        ageInfo_add(tmp->ag, age_str);
+    }
+    else
+    {
+        if ((tmp->next = stats_Init(disease)) == NULL)
+        {
+            perror("stats_Init()");
+            return NULL;
+        }
+
+        ageInfo_add(tmp->next->ag, age_str);
+    }
+
+    return st;
+}
+
+static void stats_close(statsPtr st)
+{
+    statsPtr tmp = st;
+
+    while (st != NULL)
+    {
+        tmp = st;
+        st = st->next;
+
+        free(tmp->disease);
+        free(tmp->ag);
+        free(tmp);
+    }
 }

@@ -167,27 +167,22 @@ int Patient_Compare(PatientPtr p1, const char *id, const char *fName, const char
     {
         return -1;
     }
-
     else if (strcmp(p1->fName, fName))
     {
         return -1;
     }
-
     else if (strcmp(p1->lName, lName))
     {
         return -1;
     }
-
     else if (strcmp(p1->diseaseID, disease))
     {
         return -1;
     }
-
     else if (strcmp(p1->country, country))
     {
         return -1;
     }
-
     else if (strcmp(p1->age, age))
     {
         return -1;

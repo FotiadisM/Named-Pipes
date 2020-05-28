@@ -29,11 +29,11 @@ int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t buff
         return -1;
     }
 
-    if (DA_main(workers_array, numWorkers, bufferSize) == -1)
-    {
-        printf("DA_main() failed");
-        return -1;
-    }
+    // if (DA_main(workers_array, numWorkers, bufferSize) == -1)
+    // {
+    //     printf("DA_main() failed");
+    //     return -1;
+    // }
 
     free(buffer);
 
@@ -120,7 +120,6 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
         }
 
         if (pselect(maxfd + 1, &fds, NULL, NULL, NULL, NULL) == -1)
-
         {
             perror("select()");
         }
@@ -133,7 +132,6 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
 
                 if (!strcmp(str, "OK"))
                 {
-                    printf("revieved count %d\n", count);
                     count++;
                 }
             }
