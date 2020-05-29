@@ -22,7 +22,7 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
 static void Worker_handleSignals(struct sigaction *act);
 static void handler(int signum);
 
-static int validatePatient(const wordexp_t *p, const char *country, const ListPtr list);
+static int validatePatient(const ListPtr list, const char *id);
 static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list);
 static char *Worker_getPath(const char *input_dir, const char *country);
 
@@ -228,7 +228,7 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
 
                     if (!strcmp(p.we_wordv[1], "ENTER"))
                     {
-                        if (validatePatient(&p, country->str, list))
+                        if (validatePatient(list, p.we_wordv[0]))
                         {
                             if ((st = stats_add(st, p.we_wordv[4], p.we_wordv[5])) == NULL)
                             {
@@ -283,11 +283,10 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
                     return -1;
                 }
 
+                stats_close(st);
                 free(file);
                 fclose(filePtr);
             }
-
-            stats_close(st);
         }
 
         free(path);
@@ -306,13 +305,13 @@ static void handler(int signum)
     m_signal = signum;
 }
 
-static int validatePatient(const wordexp_t *p, const char *country, const ListPtr list)
+static int validatePatient(const ListPtr list, const char *id)
 {
     ListNodePtr node = list->head;
 
     while (node != NULL)
     {
-        if (Patient_Compare(node->patient, p->we_wordv[0], p->we_wordv[2], p->we_wordv[3], p->we_wordv[4], country, p->we_wordv[5]))
+        if (!strcmp(node->patient->id, id))
         {
             return 0;
         }
@@ -365,13 +364,6 @@ static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t
         return -1;
     }
     strtok(date, ".");
-
-    statsPtr tmp = st;
-    while (tmp != NULL)
-    {
-        printf("%s %s %d %d %d %d\n", date, st->disease, st->ag->ag1, st->ag->ag2, st->ag->ag3, st->ag->ag4);
-        tmp = tmp->next;
-    }
 
     free(date);
 

@@ -45,11 +45,11 @@ do
             id=$((RANDOM % 1000))
             status="ENTER"
             
-            ran=$((RANDOM % 2))
-            if [ $ran -ne 0 ];
-            then
-                status="EXIT"
-            fi
+            # ran=$((RANDOM % 2))
+            # if [ $ran -ne 0 ];
+            # then
+            #     status="EXIT"
+            # fi
 
             fname=Jhon
             lname=Davidson
