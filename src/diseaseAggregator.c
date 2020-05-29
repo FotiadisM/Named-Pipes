@@ -116,7 +116,6 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
         perror("open file");
         return -1;
     }
-    // chmod("./logs/stats.txt", 777);
 
     while (1)
     {
