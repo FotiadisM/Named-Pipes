@@ -68,6 +68,9 @@ int Worker(const size_t bufferSize, const char *input_dir)
         printf("Worker_Run() failed\n");
     }
 
+    char *msg = decode(r_fd, buffer, bufferSize);
+    free(msg);
+
     if (close(r_fd) == -1 || close(w_fd) == -1)
     {
         perror("close");
@@ -295,6 +298,8 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
         country = country->next;
     }
 
+    encode(w_fd, "OK", bufferSize);
+
     free(line);
 
     return 0;
@@ -356,7 +361,11 @@ static char *Worker_getPath(const char *input_dir, const char *country)
 
 static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t bufferSize, const char *country, const char *file)
 {
-    char *date = NULL;
+    statsPtr node = st;
+    size_t final_len = 0;
+    string_nodePtr buffer_list = NULL, tmp = NULL;
+    char *date = NULL, *buffer = NULL, *final_buffer = NULL;
+    char ag1[12] = {'\0'}, ag2[12] = {'\0'}, ag3[12] = {'\0'}, ag4[12] = {'\0'};
 
     if ((date = strdup(file)) == NULL)
     {
@@ -365,7 +374,61 @@ static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t
     }
     strtok(date, ".");
 
+    while (node != NULL)
+    {
+
+        sprintf(ag1, "%d", node->ag->ag1);
+        sprintf(ag2, "%d", node->ag->ag2);
+        sprintf(ag3, "%d", node->ag->ag3);
+        sprintf(ag4, "%d", node->ag->ag4);
+
+        if ((buffer = malloc(strlen(node->disease) + strlen(ag1) + strlen(ag2) + strlen(ag3) + strlen(ag4) + 7)) == NULL)
+        {
+            perror("malloc");
+            return -1;
+        }
+
+        strcpy(buffer, node->disease);
+        strcat(buffer, "\n");
+        strcat(buffer, ag1);
+        strcat(buffer, "\n");
+        strcat(buffer, ag2);
+        strcat(buffer, "\n");
+        strcat(buffer, ag3);
+        strcat(buffer, "\n");
+        strcat(buffer, ag4);
+        strcat(buffer, "\n\n");
+
+        final_len += strlen(buffer);
+        buffer_list = add_stringNode(buffer_list, buffer);
+
+        free(buffer);
+
+        node = node->next;
+    }
+
+    if ((final_buffer = malloc(strlen(date) + strlen(country) + final_len + 3)) == NULL)
+    {
+        perror("malloc");
+        return -1;
+    }
+    strcpy(final_buffer, date);
+    strcat(final_buffer, "\n");
+    strcat(final_buffer, country);
+    strcat(final_buffer, "\n");
+
+    tmp = buffer_list;
+    while (tmp != NULL)
+    {
+        strcat(final_buffer, tmp->str);
+        tmp = tmp->next;
+    }
+
+    encode(w_fd, final_buffer, bufferSize);
+
     free(date);
+    free(final_buffer);
+    clear_stringNode(buffer_list);
 
     return 0;
 }

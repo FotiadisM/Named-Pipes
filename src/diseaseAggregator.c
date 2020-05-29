@@ -29,11 +29,16 @@ int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t buff
         return -1;
     }
 
-    // if (DA_main(workers_array, numWorkers, bufferSize) == -1)
-    // {
-    //     printf("DA_main() failed");
-    //     return -1;
-    // }
+    if (DA_main(workers_array, numWorkers, bufferSize) == -1)
+    {
+        printf("DA_main() failed");
+        return -1;
+    }
+
+    for (int i = 0; i < numWorkers; i++)
+    {
+        encode(workers_array[i].w_fd, "OK", bufferSize);
+    }
 
     free(buffer);
 
@@ -96,6 +101,7 @@ static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, con
 static int DA_main(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize)
 {
     fd_set fds;
+    FILE *filePtr = NULL;
     int maxfd = 0, count = 0;
     char *buffer = NULL, *str = NULL;
 
@@ -104,6 +110,13 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
         perror("malloc");
         return -1;
     }
+
+    if ((filePtr = fopen("./logs/stats.txt", "w+")) == NULL)
+    {
+        perror("open file");
+        return -1;
+    }
+    // chmod("./logs/stats.txt", 777);
 
     while (1)
     {
@@ -134,6 +147,12 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
                 {
                     count++;
                 }
+                else
+                {
+                    fprintf(filePtr, "%s", str);
+                }
+
+                free(str);
             }
         }
 
@@ -141,9 +160,9 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
         {
             break;
         }
-
-        free(str);
     }
+
+    fclose(filePtr);
 
     free(buffer);
 

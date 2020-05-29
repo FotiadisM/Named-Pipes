@@ -47,7 +47,7 @@ int Pipe_Init(const char *path, const int pid, const int flags)
 
 int encode(const int fd, const char *buffer, const size_t bufferSize)
 {
-    char str[12] = {0};
+    char str[24] = {0};
     size_t str_size = sizeof(str);
     size_t buffer_len = strlen(buffer) + 1;
 
@@ -60,7 +60,7 @@ int encode(const int fd, const char *buffer, const size_t bufferSize)
 
     if (str_size % bufferSize)
     {
-        write(fd, str + (str_size - str_size % bufferSize), bufferSize);
+        write(fd, str + (str_size - str_size % bufferSize), str_size % bufferSize);
     }
 
     for (size_t i = 0; i < buffer_len / bufferSize; i++)
@@ -70,7 +70,7 @@ int encode(const int fd, const char *buffer, const size_t bufferSize)
 
     if (buffer_len % bufferSize)
     {
-        write(fd, buffer + (buffer_len - buffer_len % bufferSize), bufferSize);
+        write(fd, buffer + (buffer_len - buffer_len % bufferSize), buffer_len % bufferSize);
     }
 
     return 0;
@@ -79,7 +79,7 @@ int encode(const int fd, const char *buffer, const size_t bufferSize)
 char *decode(const int fd, char *buffer, const size_t bufferSize)
 {
     char *r_buffer = NULL;
-    char str[12] = {0};
+    char str[24] = {0};
     size_t str_size = sizeof(str);
     size_t r_buffer_size = 0;
 
@@ -91,7 +91,7 @@ char *decode(const int fd, char *buffer, const size_t bufferSize)
 
     if (str_size % bufferSize)
     {
-        read(fd, buffer, bufferSize);
+        read(fd, buffer, str_size % bufferSize);
         memcpy(str + (str_size / bufferSize) * bufferSize, buffer, str_size - (str_size / bufferSize) * bufferSize);
     }
 
@@ -111,7 +111,7 @@ char *decode(const int fd, char *buffer, const size_t bufferSize)
 
     if (r_buffer_size % bufferSize)
     {
-        read(fd, buffer, bufferSize);
+        read(fd, buffer, r_buffer_size % bufferSize);
         memcpy(r_buffer + (r_buffer_size / bufferSize) * bufferSize, buffer, r_buffer_size - (r_buffer_size / bufferSize) * bufferSize);
     }
 
