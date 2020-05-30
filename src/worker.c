@@ -18,6 +18,7 @@ static int Worker_Init(int *w_fd, int *r_fd, char **buffer, const size_t bufferS
 
 static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
 static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int w_fd, const size_t bufferSize, const char *input_dir);
+static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const size_t bufferSize, const ListPtr list, const HashTablePtr h1, const HashTablePtr h2);
 
 static void Worker_handleSignals(struct sigaction *act);
 static void handler(int signum);
@@ -68,8 +69,11 @@ int Worker(const size_t bufferSize, const char *input_dir)
         printf("Worker_Run() failed\n");
     }
 
-    char *msg = decode(r_fd, buffer, bufferSize);
-    free(msg);
+    if (Worker_wait_input(w_fd, r_fd, buffer, bufferSize, list, diseaseHT, countryHT) == -1)
+    {
+        perror("Worker_wait_input() failed");
+        return -1;
+    }
 
     if (close(r_fd) == -1 || close(w_fd) == -1)
     {
@@ -301,6 +305,48 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
     encode(w_fd, "OK", bufferSize);
 
     free(line);
+
+    return 0;
+}
+
+static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const size_t bufferSize, const ListPtr list, const HashTablePtr h1, const HashTablePtr h2)
+{
+    wordexp_t p;
+    char *str = NULL;
+
+    while (1)
+    {
+        str = decode(r_fd, buffer, bufferSize);
+
+        wordexp(str, &p, 0);
+
+        if (!strcmp(p.we_wordv[0], "/exit"))
+        {
+            free(str);
+            wordfree(&p);
+            break;
+        }
+        else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
+        {
+        }
+        else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
+        {
+        }
+        else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
+        {
+            printf("search\n");
+            encode(w_fd, "OK", bufferSize);
+        }
+        else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
+        {
+        }
+        else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
+        {
+        }
+
+        wordfree(&p);
+        free(str);
+    }
 
     return 0;
 }
