@@ -17,7 +17,10 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
 static int DA_wait_input(const worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize);
 
 static void listCountries(const worker_infoPtr workers_array, const int numWorkers);
-static int searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const size_t bufferSize);
+static void diseaseFrequency(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
+static void searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
+static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
+static void general(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
 
 int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
 {
@@ -46,11 +49,6 @@ int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t buff
         printf("DA_wait_input() failed");
         return -1;
     }
-
-    // for (int i = 0; i < numWorkers; i++)
-    // {
-    //     encode(workers_array[i].w_fd, "OK", bufferSize);
-    // }
 
     free(buffer);
 
@@ -208,19 +206,23 @@ static int DA_wait_input(const worker_infoPtr workers_array, const int numWorker
         }
         else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
         {
+            diseaseFrequency(workers_array, numWorkers, str, &p, bufferSize);
         }
         else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
         {
+            topk_AgeRanges(workers_array, numWorkers, str, &p, bufferSize);
         }
         else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
         {
-            searchPatientRecord(workers_array, numWorkers, str, bufferSize);
+            searchPatientRecord(workers_array, numWorkers, str, &p, bufferSize);
         }
         else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
         {
+            general(workers_array, numWorkers, str, &p, bufferSize);
         }
         else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
         {
+            general(workers_array, numWorkers, str, &p, bufferSize);
         }
 
         wordfree(&p);
@@ -229,6 +231,87 @@ static int DA_wait_input(const worker_infoPtr workers_array, const int numWorker
     free(str);
 
     return 0;
+}
+
+static int getWorker(const worker_infoPtr workers_array, const int numWorkers, const char *str)
+{
+    string_nodePtr node = NULL;
+
+    if (str != NULL)
+    {
+        for (int i = 0; i < numWorkers; i++)
+        {
+            node = workers_array[i].countries_list;
+
+            while (node != NULL)
+            {
+                if (!strcmp(node->str, str))
+                {
+                    return i;
+                }
+                node = node->next;
+            }
+        }
+    }
+
+    return -1;
+}
+
+static int await_answear(const worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize)
+{
+    fd_set fds;
+    int maxfd = 0, count = 0, total = 0;
+    char *buffer = NULL, *str = NULL;
+
+    if ((buffer = malloc(bufferSize)) == NULL)
+    {
+        perror("malloc");
+        return -1;
+    }
+
+    while (1)
+    {
+        FD_ZERO(&fds);
+
+        for (int i = 0; i < numWorkers; i++)
+        {
+            FD_SET(workers_array[i].r_fd, &fds);
+
+            if (workers_array[i].r_fd > maxfd)
+            {
+                maxfd = workers_array[i].r_fd;
+            }
+        }
+
+        if (pselect(maxfd + 1, &fds, NULL, NULL, NULL, NULL) == -1)
+        {
+            perror("select()");
+            return -1;
+        }
+
+        for (int i = 0; i < numWorkers; i++)
+        {
+            if (FD_ISSET(workers_array[i].r_fd, &fds))
+            {
+                str = decode(workers_array[i].r_fd, buffer, bufferSize);
+
+                total += (int)strtol(str, NULL, 10);
+
+                count++;
+
+                free(str);
+            }
+        }
+
+        if (count == numWorkers)
+        {
+            break;
+        }
+    }
+
+    free(buffer);
+
+    return total;
 }
 
 static void listCountries(const worker_infoPtr workers_array, const int numWorkers)
@@ -247,53 +330,94 @@ static void listCountries(const worker_infoPtr workers_array, const int numWorke
     }
 }
 
-static int searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const size_t bufferSize)
+static void diseaseFrequency(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
 {
-    int maxfd = 0;
-    fd_set r_fds;
-    char *answ = NULL, *buffer = NULL;
+    int index = 0;
+    char *buffer = NULL, *answ = NULL;
 
-    if ((buffer = malloc(bufferSize)) == NULL)
+    if (p->we_wordc == 4 || p->we_wordc == 5)
     {
-        perror("malloc");
-        return -1;
-    }
-
-    FD_ZERO(&r_fds);
-
-    for (int i = 0; i < numWorkers; i++)
-    {
-        encode(workers_array[i].w_fd, str, bufferSize);
-        FD_SET(workers_array[i].r_fd, &r_fds);
-
-        if (maxfd < workers_array[i].r_fd)
+        if ((index = getWorker(workers_array, numWorkers, p->we_wordv[4])) == -1)
         {
-            maxfd = workers_array[i].r_fd;
+            for (int i = 0; i < numWorkers; i++)
+            {
+                encode(workers_array[i].w_fd, str, bufferSize);
+            }
+            printf("%d\n", await_answear(workers_array, numWorkers, bufferSize));
         }
-    }
-
-    if (pselect(maxfd + 1, &r_fds, NULL, NULL, NULL, NULL) == -1)
-    {
-        perror("pselect");
-        return -1;
-    }
-
-    for (int i = 0; i < numWorkers; i++)
-    {
-        if (FD_ISSET(workers_array[i].r_fd, &r_fds))
+        else
         {
-            answ = decode(workers_array[i].r_fd, buffer, bufferSize);
+            encode(workers_array[index].w_fd, str, bufferSize);
+            buffer = malloc(bufferSize);
+            answ = decode(workers_array[index].r_fd, buffer, bufferSize);
             printf("%s\n", answ);
 
             free(answ);
-
-            break;
+            free(buffer);
         }
     }
+    else
+    {
+        printf("Invalid input\n");
+    }
+}
 
-    printf("\n");
+static void general(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
+{
+    int index = 0;
 
-    free(buffer);
+    if (p->we_wordc == 4 || p->we_wordc == 5)
+    {
+        if ((index = getWorker(workers_array, numWorkers, p->we_wordv[4])) == -1)
+        {
+            for (int i = 0; i < numWorkers; i++)
+            {
+                encode(workers_array[i].w_fd, str, bufferSize);
+            }
+        }
+        else
+        {
+            encode(workers_array[index].w_fd, str, bufferSize);
+        }
+    }
+    else
+    {
+        printf("Invalid input\n");
+    }
+}
 
-    return 0;
+static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
+{
+    int index = 0;
+
+    if (p->we_wordc == 6)
+    {
+        if ((index = getWorker(workers_array, numWorkers, p->we_wordv[2])) == -1)
+        {
+            printf("Country not registered\n");
+        }
+        else
+        {
+            encode(workers_array[index].w_fd, str, bufferSize);
+        }
+    }
+    else
+    {
+        printf("Invalid input\n");
+    }
+}
+
+static void searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
+{
+    if (p->we_wordc == 2)
+    {
+        for (int i = 0; i < numWorkers; i++)
+        {
+            encode(workers_array[i].w_fd, str, bufferSize);
+        }
+    }
+    else
+    {
+        printf("Invalid input\n");
+    }
 }

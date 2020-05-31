@@ -23,8 +23,11 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
 static void Worker_handleSignals(struct sigaction *act);
 static void handler(int signum);
 
+static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr ht);
+
 static int validatePatient(const ListPtr list, const char *id);
 static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list);
+static PatientPtr getPatientById(const char *id, const ListPtr list);
 static char *Worker_getPath(const char *input_dir, const char *country);
 
 static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t bufferSize, const char *country, const char *file);
@@ -328,20 +331,28 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
         }
         else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
         {
+            diseaseFrequency(w_fd, bufferSize, str, h1);
         }
         else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
         {
+            printf("str: %s\n", str);
         }
         else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
         {
-            printf("search\n");
-            encode(w_fd, "OK", bufferSize);
+            PatientPtr patient = NULL;
+
+            if ((patient = getPatientById(p.we_wordv[1], list)) != NULL)
+            {
+                Patient_Print(patient);
+            }
         }
         else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
         {
+            printf("str: %s\n", str);
         }
         else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
         {
+            printf("str: %s\n", str);
         }
 
         wordfree(&p);
@@ -354,6 +365,74 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
 static void handler(int signum)
 {
     m_signal = signum;
+}
+
+static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr ht)
+{
+    char answ[12];
+    wordexp_t p;
+    AVLTreePtr tree = NULL;
+    DatePtr d1 = NULL, d2 = NULL;
+
+    wordexp(str, &p, 0);
+
+    if ((d1 = Date_Init(p.we_wordv[2])) == NULL || (d2 = Date_Init(p.we_wordv[3])) == NULL)
+    {
+        return -1;
+    }
+
+    if ((tree = HashTable_LocateKey(&(ht->table[hash(p.we_wordv[1]) % ht->size]), p.we_wordv[1], ht->bucketSize)) == NULL)
+    {
+        printf("Disease not found\n");
+        return 0;
+    }
+
+    sprintf(answ, "%d", AVLNode_countPatients(tree->root, p.we_wordv[1], p.we_wordv[4], d1, d2));
+    encode(w_fd, answ, bufferSize);
+
+    free(d1);
+    free(d2);
+    wordfree(&p);
+
+    return 0;
+}
+
+static int numFunctions(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr h1, const HashTablePtr h2)
+{
+    char answ[12];
+    wordexp_t p;
+    AVLTreePtr tree = NULL;
+    DatePtr d1 = NULL, d2 = NULL;
+
+    wordexp(str, &p, 0);
+
+    if ((d1 = Date_Init(p.we_wordv[2])) == NULL || (d2 = Date_Init(p.we_wordv[3])) == NULL)
+    {
+        return -1;
+    }
+
+    if (p.we_wordc == 4)
+    {
+    }
+
+    else
+    {
+    }
+
+    if ((tree = HashTable_LocateKey(&(ht->table[hash(p.we_wordv[1]) % ht->size]), p.we_wordv[1], ht->bucketSize)) == NULL)
+    {
+        printf("Disease not found\n");
+        return 0;
+    }
+
+    sprintf(answ, "%d", AVLNode_countPatients(tree->root, p.we_wordv[1], p.we_wordv[4], d1, d2));
+    encode(w_fd, answ, bufferSize);
+
+    free(d1);
+    free(d2);
+    wordfree(&p);
+
+    return 0;
 }
 
 static int validatePatient(const ListPtr list, const char *id)
@@ -379,6 +458,22 @@ static PatientPtr getPatient(const wordexp_t *p, const char *country, const List
     while (node != NULL)
     {
         if (!Patient_Compare(node->patient, p->we_wordv[0], p->we_wordv[2], p->we_wordv[3], p->we_wordv[4], country, p->we_wordv[5]))
+        {
+            return node->patient;
+        }
+        node = node->next;
+    }
+
+    return NULL;
+}
+
+static PatientPtr getPatientById(const char *id, const ListPtr list)
+{
+    ListNodePtr node = list->head;
+
+    while (node != NULL)
+    {
+        if (!strcmp(node->patient->id, id))
         {
             return node->patient;
         }
