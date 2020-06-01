@@ -84,8 +84,6 @@ int main(int argc, char *argv[])
                 exit(EXIT_FAILURE);
             }
 
-            free(input_dir);
-
             exit(EXIT_SUCCESS);
         }
 

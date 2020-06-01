@@ -1,7 +1,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +26,7 @@ static void Worker_handleSignals(struct sigaction *act);
 static void handler(int signum);
 
 static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr ht);
+static int numFunctions(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr h1, const ListPtr list, const int flag);
 
 static int validatePatient(const ListPtr list, const char *id);
 static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list);
@@ -38,20 +41,30 @@ static statsPtr stats_Init();
 static statsPtr stats_add(statsPtr st, const char *disease, const char *age_str);
 static void stats_close(statsPtr st);
 
-int Worker(const size_t bufferSize, const char *input_dir)
+int Worker(const size_t bufferSize, char *input_dir)
 {
     int r_fd = 0, w_fd = 0;
     char *buffer = NULL;
-    struct sigaction *act = NULL;
     string_nodePtr countries = NULL;
     ListPtr list = NULL;
     HashTablePtr diseaseHT = NULL, countryHT = NULL;
+
+    sigset_t blockset;
+    struct sigaction *act = NULL;
+
+    sigemptyset(&blockset);
+    sigaddset(&blockset, SIGINT);
+    sigaddset(&blockset, SIGQUIT);
+    sigaddset(&blockset, SIGUSR1);
+    sigprocmask(SIG_BLOCK, &blockset, NULL);
 
     if (Worker_Init(&w_fd, &r_fd, &buffer, bufferSize, &list, &diseaseHT, &countryHT, &act) == -1)
     {
         printf("Worker_Init() failed");
         return -1;
     }
+
+    Worker_handleSignals(act);
 
     if ((countries = Worker_GetCountries(r_fd, w_fd, buffer, bufferSize)) == NULL)
     {
@@ -60,17 +73,23 @@ int Worker(const size_t bufferSize, const char *input_dir)
             perror("close");
         }
 
+        free(act);
         free(buffer);
+        free(input_dir);
+
+        HashTable_Close(diseaseHT);
+        HashTable_Close(countryHT);
+        List_Close(list, F_PATIENT);
 
         return -1;
     }
-
-    // Worker_handleSignals(act);
 
     if (Worker_Run(list, diseaseHT, countryHT, countries, w_fd, bufferSize, input_dir) == -1)
     {
         printf("Worker_Run() failed\n");
     }
+
+    clear_stringNode(countries);
 
     if (Worker_wait_input(w_fd, r_fd, buffer, bufferSize, list, diseaseHT, countryHT) == -1)
     {
@@ -85,7 +104,7 @@ int Worker(const size_t bufferSize, const char *input_dir)
 
     free(act);
     free(buffer);
-    clear_stringNode(countries);
+    free(input_dir);
 
     HashTable_Close(diseaseHT);
     HashTable_Close(countryHT);
@@ -154,15 +173,9 @@ static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *
 
         else if (!strcmp(str, "/exit"))
         {
-            if (close(r_fd) == -1 || close(w_fd) == -1)
-            {
-                perror("close");
-            }
-
-            free(buffer);
             free(str);
 
-            exit(EXIT_SUCCESS);
+            return NULL;
         }
 
         else
@@ -183,8 +196,38 @@ static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *
 static void Worker_handleSignals(struct sigaction *act)
 {
     act->sa_handler = (void *)handler;
+    sigemptyset(&act->sa_mask);
+    act->sa_flags = 0;
 
     sigaction(SIGINT, act, NULL);
+    sigaction(SIGQUIT, act, NULL);
+    sigaction(SIGUSR1, act, NULL);
+}
+
+static void handler(int signum)
+{
+    if (signum == SIGINT || signum == SIGQUIT)
+    {
+        m_signal = 1;
+    }
+}
+
+static void sig_int()
+{
+    FILE *filePtr = NULL;
+
+    char path[100];
+
+    sprintf(path, "./logs/log_file%d", getpid());
+
+    if ((filePtr = fopen(path, "w+")) == NULL)
+    {
+        perror("open file");
+    }
+
+    fclose(filePtr);
+
+    printf("worker: %d recieved siganl\n", getpid());
 }
 
 static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int w_fd, const size_t bufferSize, const char *input_dir)
@@ -314,14 +357,46 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
 
 static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const size_t bufferSize, const ListPtr list, const HashTablePtr h1, const HashTablePtr h2)
 {
+    fd_set rfds;
     wordexp_t p;
     char *str = NULL;
 
     while (1)
     {
+        sigset_t emptyset;
+
+        sigemptyset(&emptyset);
+
+        FD_ZERO(&rfds);
+        FD_SET(r_fd, &rfds);
+
+        if (pselect(r_fd + 1, &rfds, NULL, NULL, NULL, &emptyset) == -1)
+        {
+            if (errno == EINTR)
+            {
+                if (m_signal == 1)
+                {
+                    sig_int();
+                    break;
+                }
+            }
+            else
+            {
+                perror("pselect");
+            }
+        }
+
         str = decode(r_fd, buffer, bufferSize);
 
         wordexp(str, &p, 0);
+
+        if (m_signal)
+        {
+            if (m_signal == 1)
+            {
+                sig_int();
+            }
+        }
 
         if (!strcmp(p.we_wordv[0], "/exit"))
         {
@@ -348,11 +423,11 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
         }
         else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
         {
-            printf("str: %s\n", str);
+            numFunctions(w_fd, bufferSize, str, h2, list, ENTER);
         }
         else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
         {
-            printf("str: %s\n", str);
+            numFunctions(w_fd, bufferSize, str, h2, list, EXIT);
         }
 
         wordfree(&p);
@@ -360,11 +435,6 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
     }
 
     return 0;
-}
-
-static void handler(int signum)
-{
-    m_signal = signum;
 }
 
 static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr ht)
@@ -397,11 +467,12 @@ static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char 
     return 0;
 }
 
-static int numFunctions(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr h1, const HashTablePtr h2)
+static int numFunctions(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr h1, const ListPtr list, const int flag)
 {
-    char answ[12];
+    int count = 0;
     wordexp_t p;
-    AVLTreePtr tree = NULL;
+    HashNodePtr node = NULL;
+    ListNodePtr ptr = list->head;
     DatePtr d1 = NULL, d2 = NULL;
 
     wordexp(str, &p, 0);
@@ -413,20 +484,119 @@ static int numFunctions(const int w_fd, const size_t bufferSize, const char *str
 
     if (p.we_wordc == 4)
     {
+        if (flag == ENTER)
+        {
+            for (int i = 0; i < h1->size; i++)
+            {
+                node = &(h1->table[i]);
+                while (node != NULL)
+                {
+                    for (int j = 0; j < (int)h1->bucketSize; j++)
+                    {
+                        if (node->entries[j] != NULL)
+                        {
+                            ptr = list->head;
+                            while (ptr != NULL)
+                            {
+                                if (!strcmp(ptr->patient->country, node->entries[j]->key))
+                                {
+                                    if (!strcmp(ptr->patient->diseaseID, p.we_wordv[1]))
+                                    {
+                                        if (Date_Compare(d1, ptr->patient->entryDate) <= 0 && Date_Compare(d2, ptr->patient->entryDate) >= 0)
+                                        {
+                                            count++;
+                                        }
+                                    }
+                                }
+                                ptr = ptr->next;
+                            }
+                            printf("%s %d\n", node->entries[j]->key, count);
+                        }
+                    }
+                    node = node->next;
+                }
+            }
+        }
+        else
+        {
+            for (int i = 0; i < h1->size; i++)
+            {
+                node = &(h1->table[i]);
+                while (node != NULL)
+                {
+                    for (int j = 0; j < (int)h1->bucketSize; j++)
+                    {
+                        if (node->entries[j] != NULL)
+                        {
+                            ptr = list->head;
+                            while (ptr != NULL)
+                            {
+                                if (!strcmp(ptr->patient->country, node->entries[j]->key))
+                                {
+                                    if (!strcmp(ptr->patient->diseaseID, p.we_wordv[1]))
+                                    {
+                                        if (ptr->patient->exitDate != NULL)
+                                        {
+                                            if (Date_Compare(d1, ptr->patient->exitDate) <= 0 && Date_Compare(d2, ptr->patient->exitDate) >= 0)
+                                            {
+                                                count++;
+                                            }
+                                        }
+                                    }
+                                }
+                                ptr = ptr->next;
+                            }
+                            printf("%s %d\n", node->entries[j]->key, count);
+                        }
+                    }
+                    node = node->next;
+                }
+            }
+        }
     }
 
     else
     {
-    }
+        if (flag == ENTER)
+        {
+            while (ptr != NULL)
+            {
+                if (!strcmp(ptr->patient->country, p.we_wordv[4]))
+                {
+                    if (!strcmp(ptr->patient->diseaseID, p.we_wordv[1]))
+                    {
+                        if (Date_Compare(d1, ptr->patient->entryDate) <= 0 && Date_Compare(d2, ptr->patient->entryDate) >= 0)
+                        {
+                            count++;
+                        }
+                    }
+                }
+                ptr = ptr->next;
+            }
+        }
+        else
+        {
+            while (ptr != NULL)
+            {
+                if (!strcmp(ptr->patient->country, p.we_wordv[4]))
+                {
+                    if (!strcmp(ptr->patient->diseaseID, p.we_wordv[1]))
+                    {
+                        if (ptr->patient->exitDate != NULL)
+                        {
+                            if (Date_Compare(d1, ptr->patient->exitDate) <= 0 && Date_Compare(d2, ptr->patient->exitDate) >= 0)
+                            {
+                                count++;
+                            }
+                        }
+                    }
+                }
+                ptr = ptr->next;
+            }
+        }
 
-    if ((tree = HashTable_LocateKey(&(ht->table[hash(p.we_wordv[1]) % ht->size]), p.we_wordv[1], ht->bucketSize)) == NULL)
-    {
-        printf("Disease not found\n");
-        return 0;
+        printf("%s %d\n", p.we_wordv[4], count);
     }
-
-    sprintf(answ, "%d", AVLNode_countPatients(tree->root, p.we_wordv[1], p.we_wordv[4], d1, d2));
-    encode(w_fd, answ, bufferSize);
 
     free(d1);
     free(d2);

@@ -33,6 +33,6 @@ typedef struct stats
 
 typedef stats *statsPtr;
 
-int Worker(const size_t bufferSize, const char *input_dir);
+int Worker(const size_t bufferSize, char *input_dir);
 
 #endif

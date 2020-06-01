@@ -27,9 +27,10 @@ run:
 	./$(BDIR)/$(EXECUTABLE) -w 4 -b 5 -i ./data
 
 valgrind:
-	valgrind --leak-check=full --track-origins=yes ./$(BDIR)/$(EXECUTABLE) -w 4 -b 5 -i ./data 
+	valgrind --leak-check=full --track-origins=yes --show-leak-kinds=all ./$(BDIR)/$(EXECUTABLE) -w 4 -b 5 -i ./data 
 
 clean:
+	rm -f logs/log*
 	rm -f pipes/r_* pipes/w_*
 	rm -f $(ODIR)/*.o
 	rm -f $(BDIR)/$(EXECUTABLE)

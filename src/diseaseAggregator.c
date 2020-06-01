@@ -1,20 +1,28 @@
-#include <sys/select.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <unistd.h>
+#include <signal.h>
+#include <errno.h>
+#include <wait.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wordexp.h>
 #include <dirent.h>
 
+#include "../include/worker.h"
 #include "../include/diseaseAggregator.h"
 #include "../include/pipes.h"
 
+volatile sig_atomic_t d_signal = 0;
+
+static void handler(int signum);
+static void Parent_handleSignals(struct sigaction *act, const int t_siganl);
+
 static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir);
 static int DA_main(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize);
-static int DA_wait_input(const worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize);
+static int DA_wait_input(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir);
 
 static void listCountries(const worker_infoPtr workers_array, const int numWorkers);
 static void diseaseFrequency(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
@@ -22,15 +30,21 @@ static void searchPatientRecord(const worker_infoPtr workers_array, const int nu
 static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
 static void general(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
 
-int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
-{
-    char *buffer = NULL;
+static int handle_sigchild(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir, char *str);
 
-    if ((buffer = malloc(bufferSize)) == NULL)
-    {
-        perror("malloc");
-        return -1;
-    }
+int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir)
+{
+    sigset_t blockset;
+    struct sigaction act;
+
+    sigemptyset(&blockset);
+    sigaddset(&blockset, SIGINT);
+    sigaddset(&blockset, SIGQUIT);
+    sigaddset(&blockset, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &blockset, NULL);
+
+    Parent_handleSignals(&act, SIGINT);
+    Parent_handleSignals(&act, SIGQUIT);
 
     if (DA_DevideWork(workers_array, numWorkers, bufferSize, input_dir) == -1)
     {
@@ -38,21 +52,42 @@ int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t buff
         return -1;
     }
 
+    Parent_handleSignals(&act, SIGCHLD);
+
     if (DA_main(workers_array, numWorkers, bufferSize) == -1)
     {
         printf("DA_main() failed");
         return -1;
     }
 
-    if (DA_wait_input(workers_array, numWorkers, bufferSize) == -1)
+    if (DA_wait_input(workers_array, numWorkers, bufferSize, input_dir) == -1)
     {
         printf("DA_wait_input() failed");
         return -1;
     }
 
-    free(buffer);
-
     return 0;
+}
+
+static void handler(int signum)
+{
+    if (signum == SIGINT || signum == SIGQUIT)
+    {
+        d_signal = 1;
+    }
+    else if (signum == SIGCHLD)
+    {
+        d_signal = 2;
+    }
+}
+
+static void Parent_handleSignals(struct sigaction *act, const int t_signal)
+{
+    act->sa_handler = (void *)handler;
+    sigemptyset(&act->sa_mask);
+    act->sa_flags = 0;
+
+    sigaction(t_signal, act, NULL);
 }
 
 static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, const char *input_dir)
@@ -92,7 +127,7 @@ static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, con
         // Need to handle DrisNumber < numWorkers case
         if (flag && i >= count)
         {
-            write(workers_array[count].w_fd, "/exit", bufferSize);
+            encode(workers_array[i].w_fd, "/exit", bufferSize);
         }
         else
         {
@@ -178,54 +213,91 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
     return 0;
 }
 
-static int DA_wait_input(const worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize)
+static int DA_wait_input(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir)
 {
+    fd_set rfds;
     wordexp_t p;
     size_t len = 0;
     char *str = NULL;
 
-    while (getline(&str, &len, stdin) != -1)
+    printf("Select action\n");
+
+    while (1)
     {
-        strtok(str, "\n");
-        wordexp(str, &p, 0);
+        sigset_t emptyset;
 
-        if (!strcmp(p.we_wordv[0], "/exit"))
+        FD_ZERO(&rfds);
+        FD_SET(0, &rfds);
+
+        sigemptyset(&emptyset);
+
+        if (pselect(1, &rfds, NULL, NULL, NULL, &emptyset) == -1)
         {
-            for (int i = 0; i < numWorkers; i++)
+            if (errno == EINTR)
             {
-                encode(workers_array[i].w_fd, str, bufferSize);
+                if (d_signal == 1)
+                {
+                    break;
+                }
+                else if (d_signal == 2)
+                {
+                    handle_sigchild(workers_array, numWorkers, bufferSize, input_dir, str);
+                }
             }
+            else
+            {
+                perror("pselect");
+                return -1;
+            }
+        }
+        else
+        {
+            getline(&str, &len, stdin);
 
-            wordfree(&p);
+            if (strcmp(str, "\n"))
+            {
+                strtok(str, "\n");
+                wordexp(str, &p, 0);
 
-            break;
-        }
-        else if (!strcmp(p.we_wordv[0], "/listCountries"))
-        {
-            listCountries(workers_array, numWorkers);
-        }
-        else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
-        {
-            diseaseFrequency(workers_array, numWorkers, str, &p, bufferSize);
-        }
-        else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
-        {
-            topk_AgeRanges(workers_array, numWorkers, str, &p, bufferSize);
-        }
-        else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
-        {
-            searchPatientRecord(workers_array, numWorkers, str, &p, bufferSize);
-        }
-        else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
-        {
-            general(workers_array, numWorkers, str, &p, bufferSize);
-        }
-        else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
-        {
-            general(workers_array, numWorkers, str, &p, bufferSize);
-        }
+                if (!strcmp(p.we_wordv[0], "/exit"))
+                {
+                    for (int i = 0; i < numWorkers; i++)
+                    {
+                        encode(workers_array[i].w_fd, str, bufferSize);
+                    }
 
-        wordfree(&p);
+                    wordfree(&p);
+
+                    break;
+                }
+                else if (!strcmp(p.we_wordv[0], "/listCountries"))
+                {
+                    listCountries(workers_array, numWorkers);
+                }
+                else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
+                {
+                    diseaseFrequency(workers_array, numWorkers, str, &p, bufferSize);
+                }
+                else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
+                {
+                    topk_AgeRanges(workers_array, numWorkers, str, &p, bufferSize);
+                }
+                else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
+                {
+                    searchPatientRecord(workers_array, numWorkers, str, &p, bufferSize);
+                }
+                else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
+                {
+                    general(workers_array, numWorkers, str, &p, bufferSize);
+                }
+                else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
+                {
+                    general(workers_array, numWorkers, str, &p, bufferSize);
+                }
+
+                wordfree(&p);
+            }
+        }
     }
 
     free(str);
@@ -420,4 +492,68 @@ static void searchPatientRecord(const worker_infoPtr workers_array, const int nu
     {
         printf("Invalid input\n");
     }
+}
+
+static int handle_sigchild(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir, char *str)
+{
+    pid_t pid = 0;
+
+    pid = wait(NULL);
+
+    for (int i = 0; i < numWorkers; i++)
+    {
+        if (pid == workers_array[i].pid)
+        {
+            close(workers_array[i].r_fd);
+            close(workers_array[i].w_fd);
+
+            printf("\nforking new worker\n\n");
+
+            pid = fork();
+
+            if (pid == -1)
+            {
+                perror("fork");
+            }
+            else if (pid == 0)
+            {
+                for (int j = 0; j < numWorkers; j++)
+                {
+                    clear_stringNode(workers_array[j].countries_list);
+                }
+                free(workers_array);
+
+                if (str != NULL)
+                {
+                    free(str);
+                }
+
+                if (Worker(bufferSize, input_dir) == -1)
+                {
+                    printf("worker exiting\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                exit(EXIT_SUCCESS);
+            }
+            else
+            {
+                workers_array[i].pid = pid;
+
+                if ((workers_array[i].r_fd = Pipe_Init("./pipes/r_", pid, O_RDONLY)) == -1)
+                {
+                    printf("Pipe_Init() failed, exiting");
+                }
+
+                if ((workers_array[i].w_fd = Pipe_Init("./pipes/w_", pid, O_WRONLY)) == -1)
+                {
+                    printf("Pipe_Init() failed, exiting");
+                }
+            }
+
+            break;
+        }
+    }
+
+    return 0;
 }
