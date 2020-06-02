@@ -24,11 +24,12 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
 
 static void Worker_handleSignals(struct sigaction *act);
 static void handler(int signum);
-static void handle_sigint();
+static void handle_sigint(const string_nodePtr countries, const int count, const int err);
 static int handle_sigusr1(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, string_nodePtr dates, const char *input_dir);
 
 static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr ht);
 static int topk_AgeRanges(const int w_fd, const size_t bufferSize, const char *str, const ListPtr list);
+static int searchPatientRecord(wordexp_t *p, const int w_fd, const size_t bufferSize, const ListPtr list);
 static int numFunctions(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr h1, const ListPtr list, const int flag);
 
 static int validatePatient(const ListPtr list, const char *id);
@@ -210,8 +211,9 @@ static void handler(int signum)
     }
 }
 
-static void handle_sigint()
+static void handle_sigint(const string_nodePtr countries, const int count, const int err)
 {
+    string_nodePtr node = countries;
     FILE *filePtr = NULL;
 
     char path[100];
@@ -222,6 +224,14 @@ static void handle_sigint()
     {
         perror("open file");
     }
+
+    while (node != NULL)
+    {
+        fprintf(filePtr, "%s\n", node->str);
+        node = node->next;
+    }
+
+    fprintf(filePtr, "\nTotal: %d\nSuccessful: %d\nError: %d", count + err, count, err);
 
     fclose(filePtr);
 
@@ -484,6 +494,7 @@ static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const stri
 
 static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const size_t bufferSize, const ListPtr list, const HashTablePtr h1, const HashTablePtr h2, const string_nodePtr countries, string_nodePtr dates, const char *input_dir)
 {
+    int count = 0, err = 0;
     fd_set rfds;
     wordexp_t p;
     char *str = NULL;
@@ -503,7 +514,7 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
             {
                 if (m_signal == 1)
                 {
-                    handle_sigint();
+                    handle_sigint(countries, count, err);
                     break;
                 }
                 else if (m_signal == 2)
@@ -530,28 +541,58 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
             }
             else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
             {
-                diseaseFrequency(w_fd, bufferSize, str, h1);
+                if (diseaseFrequency(w_fd, bufferSize, str, h1) == -1)
+                {
+                    err++;
+                }
+                else
+                {
+                    count++;
+                }
             }
             else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
             {
-                topk_AgeRanges(w_fd, bufferSize, str, list);
+                if (topk_AgeRanges(w_fd, bufferSize, str, list) == -1)
+                {
+                    err++;
+                }
+                else
+                {
+                    count++;
+                }
             }
             else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
             {
-                PatientPtr patient = NULL;
-
-                if ((patient = getPatientById(p.we_wordv[1], list)) != NULL)
+                if (searchPatientRecord(&p, w_fd, bufferSize, list) == -1)
                 {
-                    Patient_Print(patient);
+                    err++;
+                }
+                else
+                {
+                    count++;
                 }
             }
             else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
             {
-                numFunctions(w_fd, bufferSize, str, h2, list, ENTER);
+                if (numFunctions(w_fd, bufferSize, str, h2, list, ENTER) == -1)
+                {
+                    err++;
+                }
+                else
+                {
+                    count++;
+                }
             }
             else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
             {
-                numFunctions(w_fd, bufferSize, str, h2, list, EXIT);
+                if (numFunctions(w_fd, bufferSize, str, h2, list, EXIT) == -1)
+                {
+                    err++;
+                }
+                else
+                {
+                    count++;
+                }
             }
 
             wordfree(&p);
@@ -579,7 +620,7 @@ static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char 
     if ((tree = HashTable_LocateKey(&(ht->table[hash(p.we_wordv[1]) % ht->size]), p.we_wordv[1], ht->bucketSize)) == NULL)
     {
         printf("Disease not found\n");
-        return 0;
+        return -1;
     }
 
     sprintf(answ, "%d", AVLNode_countPatients(tree->root, p.we_wordv[1], p.we_wordv[4], d1, d2));
@@ -660,6 +701,38 @@ static int topk_AgeRanges(const int w_fd, const size_t bufferSize, const char *s
     free(d1);
     free(d2);
     wordfree(&p);
+
+    return 0;
+}
+
+static int searchPatientRecord(wordexp_t *p, const int w_fd, const size_t bufferSize, const ListPtr list)
+{
+    PatientPtr patient = NULL;
+
+    if ((patient = getPatientById(p->we_wordv[1], list)) != NULL)
+    {
+        char str[1000], d1[12], d2[12];
+
+        sprintf(str, "%s %s %s %s %s %s ", patient->id, patient->fName, patient->lName, patient->country, patient->diseaseID, patient->age);
+        sprintf(d1, "%d-%d-%d ", patient->entryDate->day, patient->entryDate->month, patient->entryDate->year);
+        strcat(str, d1);
+
+        if (patient->exitDate != NULL)
+        {
+            sprintf(d2, "%d-%d-%d ", patient->exitDate->day, patient->exitDate->month, patient->exitDate->year);
+            strcat(str, d2);
+        }
+        else
+        {
+            strcat(str, "-");
+        }
+
+        encode(w_fd, str, bufferSize);
+    }
+    else
+    {
+        encode(w_fd, "OK", bufferSize);
+    }
 
     return 0;
 }

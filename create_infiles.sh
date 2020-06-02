@@ -51,8 +51,14 @@ do
                 status="EXIT"
             fi
 
-            fname=Jhon
+            # if the name is random the programs whas a very small chanse to validate someone for an exit date (exit date name == entry date name)
+
+            fname=Jhon 
             lname=Davidson
+
+            # fname=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 ; echo '')
+            # lname=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 ; echo '')
+
             disease=$(shuf -n 1 $diseasesFile)
             age=$((1 + RANDOM % 120))
             

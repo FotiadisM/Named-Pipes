@@ -24,13 +24,13 @@ static int DA_DevideWork(worker_infoPtr workers_array, const int numWorkers, con
 static int DA_main(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize);
 static int DA_wait_input(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir);
 
-static void listCountries(const worker_infoPtr workers_array, const int numWorkers);
-static void diseaseFrequency(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
-static void searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
-static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
-static void general(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
+static int listCountries(const worker_infoPtr workers_array, const int numWorkers);
+static int diseaseFrequency(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
+static int searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
+static int topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
+static int general(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize);
 
-static int handle_sigint(worker_infoPtr workers_array, const int numWorkers);
+static int handle_sigint(worker_infoPtr workers_array, const int numWorkers, const int count, const int err);
 static int handle_sigchild(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir, char *str);
 
 int DA_Run(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir)
@@ -216,6 +216,7 @@ static int DA_main(worker_infoPtr workers_array, const int numWorkers, const siz
 
 static int DA_wait_input(worker_infoPtr workers_array, const int numWorkers, const size_t bufferSize, char *input_dir)
 {
+    int count = 0, err = 0;
     fd_set rfds;
     wordexp_t p;
     sigset_t emptyset;
@@ -238,7 +239,7 @@ static int DA_wait_input(worker_infoPtr workers_array, const int numWorkers, con
             {
                 if (d_signal == 1)
                 {
-                    handle_sigint(workers_array, numWorkers);
+                    handle_sigint(workers_array, numWorkers, count, err);
                     break;
                 }
                 else if (d_signal == 2)
@@ -263,10 +264,7 @@ static int DA_wait_input(worker_infoPtr workers_array, const int numWorkers, con
 
                 if (!strcmp(p.we_wordv[0], "/exit"))
                 {
-                    for (int i = 0; i < numWorkers; i++)
-                    {
-                        encode(workers_array[i].w_fd, str, bufferSize);
-                    }
+                    handle_sigint(workers_array, numWorkers, count, err);
 
                     wordfree(&p);
 
@@ -274,27 +272,74 @@ static int DA_wait_input(worker_infoPtr workers_array, const int numWorkers, con
                 }
                 else if (!strcmp(p.we_wordv[0], "/listCountries"))
                 {
-                    listCountries(workers_array, numWorkers);
+                    if (listCountries(workers_array, numWorkers) == -1)
+                    {
+                        err++;
+                    }
+                    else
+                    {
+                        count++;
+                    }
                 }
                 else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
                 {
-                    diseaseFrequency(workers_array, numWorkers, str, &p, bufferSize);
+                    if (diseaseFrequency(workers_array, numWorkers, str, &p, bufferSize) == -1)
+                    {
+                        err++;
+                    }
+                    else
+                    {
+                        count++;
+                    }
                 }
                 else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
                 {
-                    topk_AgeRanges(workers_array, numWorkers, str, &p, bufferSize);
+                    if (topk_AgeRanges(workers_array, numWorkers, str, &p, bufferSize) == -1)
+                    {
+                        err++;
+                    }
+                    else
+                    {
+                        count++;
+                    }
                 }
                 else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
                 {
-                    searchPatientRecord(workers_array, numWorkers, str, &p, bufferSize);
+                    if (searchPatientRecord(workers_array, numWorkers, str, &p, bufferSize) == -1)
+                    {
+                        err++;
+                    }
+                    else
+                    {
+                        count++;
+                    }
                 }
                 else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
                 {
-                    general(workers_array, numWorkers, str, &p, bufferSize);
+                    if (general(workers_array, numWorkers, str, &p, bufferSize) == -1)
+                    {
+                        err++;
+                    }
+                    else
+                    {
+                        count++;
+                    }
                 }
                 else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
                 {
-                    general(workers_array, numWorkers, str, &p, bufferSize);
+                    if (general(workers_array, numWorkers, str, &p, bufferSize) == -1)
+                    {
+                        err++;
+                    }
+                    else
+                    {
+                        count++;
+                    }
+                }
+                else
+                {
+                    printf("Invalid Input\n");
+                    err++;
                 }
 
                 wordfree(&p);
@@ -451,7 +496,7 @@ static int await_answear_string(const worker_infoPtr workers_array, const int nu
     return 0;
 }
 
-static void listCountries(const worker_infoPtr workers_array, const int numWorkers)
+static int listCountries(const worker_infoPtr workers_array, const int numWorkers)
 {
     string_nodePtr node = NULL;
 
@@ -465,9 +510,11 @@ static void listCountries(const worker_infoPtr workers_array, const int numWorke
         }
         printf("\n");
     }
+
+    return 0;
 }
 
-static void diseaseFrequency(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
+static int diseaseFrequency(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
 {
     int index = 0;
     char *buffer = NULL, *answ = NULL;
@@ -485,7 +532,11 @@ static void diseaseFrequency(const worker_infoPtr workers_array, const int numWo
         else
         {
             encode(workers_array[index].w_fd, str, bufferSize);
-            buffer = malloc(bufferSize);
+            if ((buffer = malloc(bufferSize)) == NULL)
+            {
+                perror("malloc");
+                return -1;
+            }
             answ = decode(workers_array[index].r_fd, buffer, bufferSize);
             printf("%s\n", answ);
 
@@ -496,30 +547,42 @@ static void diseaseFrequency(const worker_infoPtr workers_array, const int numWo
     else
     {
         printf("Invalid input\n");
+        return -1;
     }
+
+    return 0;
 }
 
-static void general(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
+static int general(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
 {
     int index = 0;
     char *buffer = malloc(bufferSize);
 
     if (p->we_wordc == 4 || p->we_wordc == 5)
     {
-        if ((index = getWorker(workers_array, numWorkers, p->we_wordv[4])) == -1)
+        if (p->we_wordc == 5)
         {
+            if ((index = getWorker(workers_array, numWorkers, p->we_wordv[4])) == -1)
+            {
+                printf("Country not registered\n");
+                return -1;
+            }
+            else
+            {
+                encode(workers_array[index].w_fd, str, bufferSize);
+                char *str = decode(workers_array[index].r_fd, buffer, bufferSize);
+                printf("%s", str);
+                free(str);
+            }
+        }
+        else
+        {
+
             for (int i = 0; i < numWorkers; i++)
             {
                 encode(workers_array[i].w_fd, str, bufferSize);
             }
             await_answear_string(workers_array, numWorkers, bufferSize);
-        }
-        else
-        {
-            encode(workers_array[index].w_fd, str, bufferSize);
-            char *str = decode(workers_array[index].r_fd, buffer, bufferSize);
-            printf("%s", str);
-            free(str);
         }
 
         printf("\n");
@@ -527,12 +590,15 @@ static void general(const worker_infoPtr workers_array, const int numWorkers, co
     else
     {
         printf("Invalid input\n\n");
+        return -1;
     }
 
     free(buffer);
+
+    return 0;
 }
 
-static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
+static int topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
 {
     int index = 0;
     char *msg = NULL;
@@ -542,10 +608,17 @@ static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWork
         if ((index = getWorker(workers_array, numWorkers, p->we_wordv[2])) == -1)
         {
             printf("Country not registered\n");
+            return -1;
         }
         else
         {
-            char *buffer = malloc(bufferSize);
+            char *buffer = NULL;
+
+            if ((buffer = malloc(bufferSize)) == NULL)
+            {
+                perror("malloc");
+                return -1;
+            }
 
             encode(workers_array[index].w_fd, str, bufferSize);
 
@@ -561,31 +634,59 @@ static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWork
                 free(msg);
             }
 
+            printf("\n");
+
             free(buffer);
         }
     }
     else
     {
         printf("Invalid input\n");
+        return -1;
     }
+
+    return 0;
 }
 
-static void searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
+static int searchPatientRecord(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
 {
     if (p->we_wordc == 2)
     {
+        char *buffer = NULL;
+
+        if ((buffer = malloc(bufferSize)) == NULL)
+        {
+            perror("malloc");
+            return -1;
+        }
         for (int i = 0; i < numWorkers; i++)
         {
+            char *msg = NULL;
+
             encode(workers_array[i].w_fd, str, bufferSize);
+            msg = decode(workers_array[i].r_fd, buffer, bufferSize);
+
+            if (strcmp(msg, "OK"))
+            {
+                printf("%s\n", msg);
+            }
+            free(msg);
         }
+
+        printf("\n");
+
+        free(buffer);
     }
     else
     {
         printf("Invalid input\n\n");
+        return -1;
     }
+
+    return 0;
 }
 
-static int handle_sigint(worker_infoPtr workers_array, const int numWorkers)
+static int handle_sigint(worker_infoPtr workers_array, const int numWorkers, const int count, const int err)
 {
     char path[100] = {'\0'};
     FILE *filePtr = NULL;
@@ -612,7 +713,7 @@ static int handle_sigint(worker_infoPtr workers_array, const int numWorkers)
         }
     }
 
-    printf("Just murdered those fuckers\n");
+    fprintf(filePtr, "\nTotal: %d\nSuccessful: %d\nError: %d", count + err, count, err);
 
     fclose(filePtr);
 
