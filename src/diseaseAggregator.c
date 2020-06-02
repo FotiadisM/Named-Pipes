@@ -535,6 +535,7 @@ static void general(const worker_infoPtr workers_array, const int numWorkers, co
 static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWorkers, const char *str, const wordexp_t *p, const size_t bufferSize)
 {
     int index = 0;
+    char *msg = NULL;
 
     if (p->we_wordc == 6)
     {
@@ -544,7 +545,23 @@ static void topk_AgeRanges(const worker_infoPtr workers_array, const int numWork
         }
         else
         {
+            char *buffer = malloc(bufferSize);
+
             encode(workers_array[index].w_fd, str, bufferSize);
+
+            while (1)
+            {
+                msg = decode(workers_array[index].r_fd, buffer, bufferSize);
+                if (!strcmp(msg, "OK"))
+                {
+                    free(msg);
+                    break;
+                }
+                printf("%s", msg);
+                free(msg);
+            }
+
+            free(buffer);
         }
     }
     else

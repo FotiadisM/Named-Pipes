@@ -27,6 +27,7 @@ static void handler(int signum);
 static void handle_sigint();
 
 static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr ht);
+static int topk_AgeRanges(const int w_fd, const size_t bufferSize, const char *str, const ListPtr list);
 static int numFunctions(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr h1, const ListPtr list, const int flag);
 
 static int validatePatient(const ListPtr list, const char *id);
@@ -395,7 +396,7 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
             }
             else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
             {
-                printf("str: %s\n", str);
+                topk_AgeRanges(w_fd, bufferSize, str, list);
             }
             else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
             {
@@ -453,13 +454,73 @@ static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char 
     return 0;
 }
 
-static int topk_AgeRanges(const int w_fd, const size_t bufferSize, const char *str)
+static int topk_AgeRanges(const int w_fd, const size_t bufferSize, const char *str, const ListPtr list)
 {
+    int total = 0;
+    ageInfoPtr ag = NULL;
     wordexp_t p;
-    string_nodePtr node = NULL;
+    ListNodePtr ptr = list->head;
+    DatePtr d1 = NULL, d2 = NULL;
 
     wordexp(str, &p, 0);
 
+    if ((d1 = Date_Init(p.we_wordv[4])) == NULL || (d2 = Date_Init(p.we_wordv[5])) == NULL)
+    {
+        return -1;
+    }
+
+    ag = ageInfo_Init();
+
+    while (ptr != NULL)
+    {
+        if (!strcmp(ptr->patient->country, p.we_wordv[2]))
+        {
+            if (!strcmp(ptr->patient->diseaseID, p.we_wordv[3]))
+            {
+                if (Date_Compare(d1, ptr->patient->entryDate) <= 0 && Date_Compare(d2, ptr->patient->entryDate) >= 0)
+                {
+                    ageInfo_add(ag, ptr->patient->age);
+                }
+            }
+        }
+        ptr = ptr->next;
+    }
+
+    total = ag->ag1 + ag->ag2 + ag->ag3 + ag->ag4;
+
+    for (int i = 0; i < atoi(p.we_wordv[1]); i++)
+    {
+        char str[100] = {'\0'};
+
+        if (ag->ag1 >= ag->ag2 && ag->ag1 >= ag->ag3 && ag->ag1 >= ag->ag4)
+        {
+            sprintf(str, "0-20: %f%%\n", ((float)ag->ag1 / total) * 100);
+            ag->ag1 = 0;
+        }
+        else if (ag->ag2 >= ag->ag1 && ag->ag2 >= ag->ag3 && ag->ag2 >= ag->ag4)
+        {
+            sprintf(str, "21-40: %f%%\n", ((float)ag->ag2 / total) * 100);
+            ag->ag2 = 0;
+        }
+        else if (ag->ag3 >= ag->ag1 && ag->ag3 >= ag->ag2 && ag->ag3 >= ag->ag4)
+        {
+            sprintf(str, "41-60: %f%%\n", ((float)ag->ag3 / total) * 100);
+            ag->ag3 = 0;
+        }
+        else
+        {
+            sprintf(str, "61+: %f%%\n", ((float)ag->ag4 / total) * 100);
+            ag->ag4 = 0;
+        }
+
+        encode(w_fd, str, bufferSize);
+    }
+
+    encode(w_fd, "OK", bufferSize);
+
+    free(ag);
+    free(d1);
+    free(d2);
     wordfree(&p);
 
     return 0;
