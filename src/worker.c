@@ -11,19 +11,20 @@
 #include <wordexp.h>
 
 #include "../include/worker.h"
+#include "../include/stats.h"
 #include "../include/pipes.h"
 #include "../include/hashTable.h"
 
 volatile sig_atomic_t m_signal = 0;
 
 static int Worker_Init(int *w_fd, int *r_fd, char **buffer, const size_t bufferSize, ListPtr *list, HashTablePtr *h1, HashTablePtr *h2, struct sigaction **act);
-
-static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize);
+static string_nodePtr Worker_GetCountries(const int r_fd, char *buffer, const size_t bufferSize);
 static int Worker_Run(ListPtr list, HashTablePtr h1, HashTablePtr h2, const string_nodePtr countries, const int w_fd, const size_t bufferSize, const char *input_dir);
 static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const size_t bufferSize, const ListPtr list, const HashTablePtr h1, const HashTablePtr h2);
 
 static void Worker_handleSignals(struct sigaction *act);
 static void handler(int signum);
+static void handle_sigint();
 
 static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr ht);
 static int numFunctions(const int w_fd, const size_t bufferSize, const char *str, const HashTablePtr h1, const ListPtr list, const int flag);
@@ -32,14 +33,6 @@ static int validatePatient(const ListPtr list, const char *id);
 static PatientPtr getPatient(const wordexp_t *p, const char *country, const ListPtr list);
 static PatientPtr getPatientById(const char *id, const ListPtr list);
 static char *Worker_getPath(const char *input_dir, const char *country);
-
-static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t bufferSize, const char *country, const char *file);
-
-static ageInfoPtr ageInfo_Init();
-static void ageInfo_add(ageInfoPtr ag, const char *age_str);
-static statsPtr stats_Init();
-static statsPtr stats_add(statsPtr st, const char *disease, const char *age_str);
-static void stats_close(statsPtr st);
 
 int Worker(const size_t bufferSize, char *input_dir)
 {
@@ -66,7 +59,7 @@ int Worker(const size_t bufferSize, char *input_dir)
 
     Worker_handleSignals(act);
 
-    if ((countries = Worker_GetCountries(r_fd, w_fd, buffer, bufferSize)) == NULL)
+    if ((countries = Worker_GetCountries(r_fd, buffer, bufferSize)) == NULL)
     {
         if (close(r_fd) == -1 || close(w_fd) == -1)
         {
@@ -105,7 +98,6 @@ int Worker(const size_t bufferSize, char *input_dir)
     free(act);
     free(buffer);
     free(input_dir);
-
     HashTable_Close(diseaseHT);
     HashTable_Close(countryHT);
     List_Close(list, F_PATIENT);
@@ -156,7 +148,7 @@ static int Worker_Init(int *w_fd, int *r_fd, char **buffer, const size_t bufferS
     return 0;
 }
 
-static string_nodePtr Worker_GetCountries(const int r_fd, const int w_fd, char *buffer, const size_t bufferSize)
+static string_nodePtr Worker_GetCountries(const int r_fd, char *buffer, const size_t bufferSize)
 {
     char *str = NULL;
     string_nodePtr node = NULL;
@@ -212,7 +204,7 @@ static void handler(int signum)
     }
 }
 
-static void sig_int()
+static void handle_sigint()
 {
     FILE *filePtr = NULL;
 
@@ -376,7 +368,7 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
             {
                 if (m_signal == 1)
                 {
-                    sig_int();
+                    handle_sigint();
                     break;
                 }
             }
@@ -385,53 +377,47 @@ static int Worker_wait_input(const int w_fd, const int r_fd, char *buffer, const
                 perror("pselect");
             }
         }
-
-        str = decode(r_fd, buffer, bufferSize);
-
-        wordexp(str, &p, 0);
-
-        if (m_signal)
+        else
         {
-            if (m_signal == 1)
+            str = decode(r_fd, buffer, bufferSize);
+
+            wordexp(str, &p, 0);
+
+            if (!strcmp(p.we_wordv[0], "/exit"))
             {
-                sig_int();
+                free(str);
+                wordfree(&p);
+                break;
             }
-        }
+            else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
+            {
+                diseaseFrequency(w_fd, bufferSize, str, h1);
+            }
+            else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
+            {
+                printf("str: %s\n", str);
+            }
+            else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
+            {
+                PatientPtr patient = NULL;
 
-        if (!strcmp(p.we_wordv[0], "/exit"))
-        {
-            free(str);
+                if ((patient = getPatientById(p.we_wordv[1], list)) != NULL)
+                {
+                    Patient_Print(patient);
+                }
+            }
+            else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
+            {
+                numFunctions(w_fd, bufferSize, str, h2, list, ENTER);
+            }
+            else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
+            {
+                numFunctions(w_fd, bufferSize, str, h2, list, EXIT);
+            }
+
             wordfree(&p);
-            break;
+            free(str);
         }
-        else if (!strcmp(p.we_wordv[0], "/diseaseFrequency"))
-        {
-            diseaseFrequency(w_fd, bufferSize, str, h1);
-        }
-        else if (!strcmp(p.we_wordv[0], "/topk-AgeRanges"))
-        {
-            printf("str: %s\n", str);
-        }
-        else if (!strcmp(p.we_wordv[0], "/searchPatientRecord"))
-        {
-            PatientPtr patient = NULL;
-
-            if ((patient = getPatientById(p.we_wordv[1], list)) != NULL)
-            {
-                Patient_Print(patient);
-            }
-        }
-        else if (!strcmp(p.we_wordv[0], "/numPatientAdmissions"))
-        {
-            numFunctions(w_fd, bufferSize, str, h2, list, ENTER);
-        }
-        else if (!strcmp(p.we_wordv[0], "/numPatientDischarges"))
-        {
-            numFunctions(w_fd, bufferSize, str, h2, list, EXIT);
-        }
-
-        wordfree(&p);
-        free(str);
     }
 
     return 0;
@@ -462,6 +448,18 @@ static int diseaseFrequency(const int w_fd, const size_t bufferSize, const char 
 
     free(d1);
     free(d2);
+    wordfree(&p);
+
+    return 0;
+}
+
+static int topk_AgeRanges(const int w_fd, const size_t bufferSize, const char *str)
+{
+    wordexp_t p;
+    string_nodePtr node = NULL;
+
+    wordexp(str, &p, 0);
+
     wordfree(&p);
 
     return 0;
@@ -510,7 +508,10 @@ static int numFunctions(const int w_fd, const size_t bufferSize, const char *str
                                 }
                                 ptr = ptr->next;
                             }
-                            printf("%s %d\n", node->entries[j]->key, count);
+                            char send[100];
+                            sprintf(send, "%s %d\n", node->entries[j]->key, count);
+                            encode(w_fd, send, bufferSize);
+                            // printf("%s %d\n", node->entries[j]->key, count);
                         }
                     }
                     node = node->next;
@@ -546,13 +547,18 @@ static int numFunctions(const int w_fd, const size_t bufferSize, const char *str
                                 }
                                 ptr = ptr->next;
                             }
-                            printf("%s %d\n", node->entries[j]->key, count);
+                            char send[100];
+                            sprintf(send, "%s %d\n", node->entries[j]->key, count);
+                            encode(w_fd, send, bufferSize);
+                            // printf("%s %d\n", node->entries[j]->key, count);
                         }
                     }
                     node = node->next;
                 }
             }
         }
+
+        encode(w_fd, "OK", bufferSize);
     }
 
     else
@@ -595,7 +601,10 @@ static int numFunctions(const int w_fd, const size_t bufferSize, const char *str
             }
         }
 
-        printf("%s %d\n", p.we_wordv[4], count);
+        // printf("%s %d\n", p.we_wordv[4], count);
+        char send[100];
+        sprintf(send, "%s %d\n", p.we_wordv[4], count);
+        encode(w_fd, send, bufferSize);
     }
 
     free(d1);
@@ -668,200 +677,4 @@ static char *Worker_getPath(const char *input_dir, const char *country)
     strcat(path, country);
 
     return path;
-}
-
-static int Worker_sendStatistics(const statsPtr st, const int w_fd, const size_t bufferSize, const char *country, const char *file)
-{
-    statsPtr node = st;
-    size_t final_len = 0;
-    string_nodePtr buffer_list = NULL, tmp = NULL;
-    char *date = NULL, *buffer = NULL, *final_buffer = NULL;
-    char ag1[12] = {'\0'}, ag2[12] = {'\0'}, ag3[12] = {'\0'}, ag4[12] = {'\0'};
-
-    if ((date = strdup(file)) == NULL)
-    {
-        perror("strdup");
-        return -1;
-    }
-    strtok(date, ".");
-
-    while (node != NULL)
-    {
-
-        sprintf(ag1, "%d", node->ag->ag1);
-        sprintf(ag2, "%d", node->ag->ag2);
-        sprintf(ag3, "%d", node->ag->ag3);
-        sprintf(ag4, "%d", node->ag->ag4);
-
-        if ((buffer = malloc(strlen(node->disease) + strlen(ag1) + strlen(ag2) + strlen(ag3) + strlen(ag4) + 7)) == NULL)
-        {
-            perror("malloc");
-            return -1;
-        }
-
-        strcpy(buffer, node->disease);
-        strcat(buffer, "\n");
-        strcat(buffer, ag1);
-        strcat(buffer, "\n");
-        strcat(buffer, ag2);
-        strcat(buffer, "\n");
-        strcat(buffer, ag3);
-        strcat(buffer, "\n");
-        strcat(buffer, ag4);
-        strcat(buffer, "\n\n");
-
-        final_len += strlen(buffer);
-        buffer_list = add_stringNode(buffer_list, buffer);
-
-        free(buffer);
-
-        node = node->next;
-    }
-
-    if ((final_buffer = malloc(strlen(date) + strlen(country) + final_len + 3)) == NULL)
-    {
-        perror("malloc");
-        return -1;
-    }
-    strcpy(final_buffer, date);
-    strcat(final_buffer, "\n");
-    strcat(final_buffer, country);
-    strcat(final_buffer, "\n");
-
-    tmp = buffer_list;
-    while (tmp != NULL)
-    {
-        strcat(final_buffer, tmp->str);
-        tmp = tmp->next;
-    }
-
-    encode(w_fd, final_buffer, bufferSize);
-
-    free(date);
-    free(final_buffer);
-    clear_stringNode(buffer_list);
-
-    return 0;
-}
-
-static ageInfoPtr ageInfo_Init()
-{
-    ageInfoPtr ag = NULL;
-
-    if ((ag = malloc(sizeof(ageInfo))) == NULL)
-    {
-        perror("malloc");
-        return NULL;
-    }
-
-    ag->ag1 = ag->ag2 = ag->ag3 = ag->ag4 = 0;
-
-    return ag;
-}
-
-static void ageInfo_add(ageInfoPtr ag, const char *age_str)
-{
-    int age = (int)strtol(age_str, NULL, 10);
-
-    if (age <= 20)
-    {
-        ag->ag1++;
-    }
-    else if (age <= 40)
-    {
-        ag->ag2++;
-    }
-    else if (age <= 60)
-    {
-        ag->ag3++;
-    }
-    else
-    {
-        ag->ag4++;
-    }
-}
-
-static statsPtr stats_Init(const char *disease)
-{
-    statsPtr st = NULL;
-
-    if ((st = malloc(sizeof(stats))) == NULL)
-    {
-        perror("malloc");
-        return NULL;
-    }
-
-    if ((st->ag = ageInfo_Init()) == NULL)
-    {
-        perror("ageInfo_Init() failed");
-        return NULL;
-    }
-
-    if ((st->disease = strdup(disease)) == NULL)
-    {
-        perror("strdup");
-        return NULL;
-    }
-    st->next = NULL;
-
-    return st;
-}
-
-static statsPtr stats_add(statsPtr st, const char *disease, const char *age_str)
-{
-    statsPtr tmp = st;
-
-    if (st == NULL)
-    {
-        if ((st = stats_Init(disease)) == NULL)
-        {
-            perror("stats_Init");
-            return NULL;
-        }
-        ageInfo_add(st->ag, age_str);
-
-        return st;
-    }
-
-    while (tmp->next != NULL)
-    {
-        if (!strcmp(tmp->disease, disease))
-        {
-            break;
-        }
-
-        tmp = tmp->next;
-    }
-
-    if (!strcmp(tmp->disease, disease))
-    {
-        ageInfo_add(tmp->ag, age_str);
-    }
-    else
-    {
-        if ((tmp->next = stats_Init(disease)) == NULL)
-        {
-            perror("stats_Init()");
-            return NULL;
-        }
-
-        ageInfo_add(tmp->next->ag, age_str);
-    }
-
-    return st;
-}
-
-static void stats_close(statsPtr st)
-{
-    statsPtr tmp = st;
-
-    while (st != NULL)
-    {
-        tmp = st;
-        st = st->next;
-
-        free(tmp->disease);
-        free(tmp->ag);
-        free(tmp);
-    }
 }
